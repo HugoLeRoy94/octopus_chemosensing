@@ -1,0 +1,246 @@
+\documentclass[
+    reprint, % Two-column layout (use 'preprint' for single column)
+    amsmath,
+    amssymb,
+    aps,
+    prb,      % Physics Review B style (good for general reports)
+    floatfix
+]{revtex4-2}
+
+% --- Essential Packages ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{graphicx}      % For images
+\usepackage{bm}            % Bold math: use \bm{\alpha}
+\usepackage{upgreek}       % Upright greek: use \bm{\upalpha}
+\usepackage{xcolor}        % For colored text/links
+\usepackage{hyperref}      % Clickable links
+
+
+\begin{document}
+
+\title{Mutual Information of Heteromerized Ion-Channel}
+\author{Hugo Le Roy}
+%\affiliation{Your Department/Institution}
+\date{\today}
+
+\begin{abstract}
+%In this work, we investigates the generation of functional diversity in octopus chemosensing channels. These channels are pentamers ($k_\text{sub}=5$) formed from a pool of proteins expressed by $n_\text{genes} = 26$ different genes (e.g., 'CR518', 'CR918', etc.). In this work, we quantify the coding capability of such an array for the identification of the identity and concentration of a ligand in the environment. To do so, we first introduce our model for individual ion-channel, and derive the relation between the response of a homo-pentamer and hetero-pentamers. We then introduce a model of the environment that allows us to generate an arbitrary number of ligands, with arbitrary complexity. Finally, we compute the mutual information between the environment and an array of receptors. This work allow us to compare the efficiency of hetero-pentamers vs homo-pentamers.
+
+In this work, we investigate the generation of functional diversity in octopus chemosensing channels. These channels are pentamers ($k_\text{sub}=5$) formed from a pool of proteins expressed by $n_\text{genes} = 26$ different genes (e.g., 'CR518', 'CR918'). We quantify the coding capability of such a receptor array to identify the nature and concentration of a ligand in the environment. To achieve this, we introduce a biophysical model for individual ion channels and derive the relationship between the responses of homo-pentamers and hetero-pentamers. We then model the chemical environment to simulate arbitrary ligands with varying complexity. Finally, we compute the mutual information between this environment and the receptor array, allowing us to directly compare the coding efficiency of hetero-pentamers against homo-pentamers.
+
+\end{abstract}
+
+\maketitle
+
+\section{MWC model for ion channel}
+Each receptor is composed of $k_\text{sub}$ subunits, chosen from a pool of $n_\text{genes}$ possible genetic variants. 
+The probability that a receptor, defined by its specific combination of subunits $\mathcal{U}$, opens in response to a ligand $\ell$ at concentration $c$ can be described using the Monod-Wyman-Changeux (MWC) model:
+\begin{equation}
+p_o^r(c,\ell) = \frac{\prod_{u\in \mathcal{U}} (1+c/K_o^{(u,\ell)})}{\prod_{u\in \mathcal{U}} (1+c/K_o^{(u,\ell)}) + e^{-\epsilon_\mathcal{U}}\prod_{u\in \mathcal{U}}(1+c/K_c^{(u,\ell)})}
+\end{equation}
+Here, $K_o$ and $K_c$ are the dissociation constants of the ligand when the channel is in its open and closed states, respectively. The parameter $\epsilon_\mathcal{U}$ represents the intrinsic energy difference between the closed and open states of the channel without any bound ligand (often related to the channel's inherent "leakiness").
+
+
+Previous work \cite{MWC} has shown that this function is over-parametrized: multiple combinations of $K_c$, $K_o$, and $\epsilon_\mathcal{U}$ can produce the exact same dose-response curve. We can simplify the model by introducing an effective open-state dissociation constant, $\tilde{K}_o^{(u,\ell)} = K_o^{(u,\ell)} e^{\beta \epsilon_\mathcal{U} / k_\text{sub}}$ (where $\beta = 1/k_BT$). This yields a more compact expression for the opening probability:
+$$
+p_o^{(r,l)}(c) = \frac{\prod_u \left(\frac{c}{\tilde{K}_o^{u,l}}\right)}{\prod_u\left(\frac{c}{\tilde{K}_o^{(u,l)}} \right) + \prod_u\left(1+\frac{c}{K_c^{(u,l)}} \right)}.
+$$
+
+%In many sensory systems, downstream neural processing relies on highly thresholded, binned, or even binary signals (e.g., a neuron firing an action potential or remaining silent). We work in the limit where the activation of a heteromeric receptor is strictly governed by its $EC_{50}$ : the concentration at which the opening probability is equal to $0.5$. We find that the half-activation concentration for a heteromer is the geometric mean of its individual subunit affinities:
+In many sensory systems, downstream neural processing relies on highly thresholded, binned, or even binary signals (e.g., a neuron either firing an action potential or remaining silent). We focus on the limit where the activation of a heteromeric receptor is strictly governed by its $EC_{50}$, which is the ligand concentration that yields a 50\% opening probability. Remarkably, we find that the half-activation concentration for a heteromer is simply the geometric mean of its individual subunits' effective affinities:
+
+$$EC_{50}^{(r,\ell)} = \left( \prod_{u=1}^{k_\text{sub}} \tilde{K}_o^{(u,\ell)} \right)^{1/k_\text{sub}}$$
+
+%As a result, the response of a receptor to a ligand is given by a single set of parameters that are the effective dissociation constant in the open states, of the individual sub-units: $\tilde{K}_o^{u,\ell}$. In the following we drop the $\sim$.
+As a result, a receptor's response to a ligand is fully defined by a single set of parameters: the effective open-state dissociation constants of its individual subunits ($\tilde{K}_o^{(u,\ell)}$). For simplicity, we drop the tilde ($\sim$) in the following sections.
+
+
+\section{Dissociation constants}
+%Here we derive the dissociation constants from microscopic interactions. We consider the chemical reactions:
+To build a bridge between these macroscopic response curves and microscopic physical properties, we relate the dissociation constants to interaction energies. Consider the binding reaction:
+$$
+U_o + L \rightarrow U_o L
+$$
+where $U_o$ denotes a channel subunit in the open state, $L$ is the ligand, and $U_oL$ is the bound complex.
+The dissociation constant is defined by the concentrations:
+$$
+K_o = \frac{[U_o][L]}{[U_oL]}
+$$
+From a statistical mechanics perspective, the equilibrium concentration of any chemical species in a state $\alpha$ is proportional to its Boltzmann weight:
+$$
+[\alpha] \propto e^{-\beta E_\alpha},
+$$
+Consequently, the dissociation constant can be directly rewritten in terms of the binding energy difference:
+$$
+K_o^{(u,\ell)} = \exp\left[ \Delta E_o^{u,\ell} \right]
+$$
+where the binding energy $\Delta E_o^{(u,\ell)}$ is the energy difference between the bound state and the separate unbound components:
+$$
+\Delta E_o^{(u,\ell)} = E(U_oL) - E(U_o) - E(L) 
+$$
+
+\section{Model of the environment}
+\subsection{Chemical Latent Space}
+Previous work \cite{map} has shown that odors can be mapped into an abstract "principal odor space," where closely positioned chemicals share similar smells and, consequently, similar receptor affinities. Building on this concept, we model the chemical environment as a $D$-dimensional "latent space," where the properties of any molecule are represented by a coordinate vector $\textbf{v}$. 
+In our approach, the binding energy between a receptor subunit and a ligand is directly related to their geometric distance in this space:
+
+%Following previous work \cite{map}, showing that there exist a abstract space wherein close distance translate into similar odors, and thus similar receptors affinity. 
+%We consider a $D$-dimensional chemical latent space, and denote the position of any chemical species in this space by a vector $\textbf{v}$.
+%In our approach, a ligand is defined by its dissociation constant or affinity energy defined in the previous section.
+%As a result, we write the energy difference of a ligand between the bound and the unbound state in term of chemical distance:
+$$
+\Delta E_o^{(u,\ell)} = E^{(u)} + \|\textbf{v}_u - \textbf{v}_\ell\|^2
+$$
+Here, $E^{(u)}$ is a baseline energy for the subunit. The vector $\textbf{v}_u$ represents the optimal chemical target of the subunit (which we can optimize), while $\textbf{v}_\ell$ represents the properties of a randomly encountered ligand. Thus, a subunit binds most strongly (lowest energy) to ligands that are "close" to it in the chemical space.
+
+%In this equation, the base energy: $E^{(u)}$, and the chemical properties $\textbf{v}_u$ of a unit defines efficiency of an array, whereas $\textbf{v}_\ell$ is a random variable modeling the random generation of a ligand.
+\subsection{Stochastic Energy Sampling}
+
+%To model the random encounter of a ligand, we categorize them into families. Each familly is defined by a $D$-dimensional distribution in the latent space with its own characteristics. For instance for a familly defined by a normal distribution:
+In nature, a sensory array must detect a vast and unpredictable array of ligands. To model random ligand encounters, we group chemicals into generic "families" (e.g., amines, terpenes). Each family is represented as a probability cloud within the $D$-dimensional chemical space. For instance, a ligand drawn from a normally distributed family follows:
+$$
+\textbf{v}_\ell \sim \mathcal{N}^D(\boldsymbol{\mu}_\ell, \boldsymbol{\sigma}_\ell),
+$$
+%where $\boldsymbol{\mu}$ and $\boldsymbol{\sigma}$ are two $D$-dimensional vectors defining the mean and standard deviation of the distribution.
+where $\boldsymbol{\mu}_\ell$ and $\boldsymbol{\sigma}_\ell$ define the center (average chemical profile) and the spread (intra-family chemical variation) of that specific ligand family.
+
+\subsection{Concentration Model}
+%The environmental concentration $c$ of a ligand family is handled via independent concentration models. Based on biophysical assumptions, the environment is modeled by a Log-Normal Concentration: 
+Natural odor concentrations can span many orders of magnitude. To account for this, the environmental concentration $c$ of a given ligand is drawn independently from a Log-Normal distribution, matching typical biophysical observations:
+
+$$
+\log_{10}(c) \sim \mathcal{N}(\mu_c^f, \sigma_c^f),
+$$
+where $\mu_c^f$ and $\sigma_c^g$ are respectively the mean and standard deviation for the family $f$.
+
+\section{Information Produced by an Array of Receptors}
+
+%We now consider an array of $N$ receptors, and write the activity of this array as $\mathcal{A} = (a_0,a_1, \cdots , a_N)$. To compute the maximum coding capability of such an array, we compute the mutual information between the activity of the array and ligand's identity and/or concentration for a given environment:
+We now consider the collective response of an array of $N$ receptors, denoted as an activation pattern $\mathcal{A} = (a_1, a_2, \dots, a_N)$. To quantify the coding capacity of this array, we calculate the mutual information between the array's activation pattern and the underlying ligand identity and concentration:
+
+$$
+I(\mathcal{A};(c,\ell)) = H(\mathcal{A}) - H(\mathcal{A} | (c,\ell)),
+$$
+Where 
+$$
+H(\mathcal{A}) = \sum_\mathcal{A} p(\mathcal{A}) \log[p(\mathcal{A})],
+$$
+is the Shannon entropy (the informational "richness" or diversity) of the array's responses.
+Assuming that a specific ligand at a specific concentration reliably produces a deterministic, noiseless response pattern, the conditional entropy $H(\mathcal{A} | (c,\ell))$ is zero. Under this limit, maximizing the array's sensory capacity is equivalent to maximizing the overall entropy $H(\mathcal{A})$, meaning the array should utilize as many distinct activation patterns as possible.
+
+%is the entropy of the array.
+%We consider the mapping between affinities, and activity as deterministic, noiseless: $H(A | (c,\ell)) = 0$. Therefore, the mutual information between the array and the environment is simply given by the entropy of the array $H(\mathcal{A})$.
+
+
+%A fundamental challenge in optimizing an array of chemosensors is that the mutual information maximized by the array, $I(\mathcal{A};(c,\ell)) = H(\mathcal{A}) - H(\mathcal{A} | (c,\ell))$, is strictly upper-bounded by the inherent complexity of the environment.
+%However, if the environment lacks sufficient variance or dimensionality, adding more receptors (or increasing combinatorial diversity through heteromerization) will yield diminishing returns. The array's entropy will aggressively plateau as the sensors are forced to extract redundant information from a limited probability space.
+A fundamental challenge in optimizing an array of chemosensors is that its coding capacity is strictly upper-bounded by the inherent complexity of the environment. Consequently, if the environment lacks sufficient chemical diversity or dimensionality, adding more receptors, or increasing combinatorial diversity through heteromerization, will not improve the entropy of the array. As a consequence, the array's information capacity will plateau because the sensors are forced to extract redundant information from an overly simplistic environment.
+
+
+\subsection{Optimization Procedure}
+To computationally optimize the receptor array, our objective is to tune the chemical affinities of each genetic subunit (their baseline energies and coordinate vectors $\textbf{v}_u$ in the latent space) such that the full array produces the widest possible variety of distinct activation patterns. We achieve this using gradient descent, a mathematical optimization algorithm that calculates the gradient of the array's information capacity with respect to the chemical parameters, iteratively updating them to climb toward maximum entropy.
+
+A major computational challenge in this process is the discrete nature of biological sensory activation. In our model, downstream neural processing relies on binned or binary responses (e.g., a receptor either fires or remains silent). However, gradient descent cannot optimize sharp, discrete step-functions because they lack smooth slopes. To bypass this, we utilize a technique called continuous relaxation (or "soft binning"). We define $K$ discrete activation bins with centers $c_k$ (e.g., $c_0=0$ and $c_1=1$ for a binary system). For a given continuous receptor activity $a_r$, the probability that the receptor falls into bin $k$ is approximated using a temperature-scaled Softmax function:
+$$
+P(a_r \in \text{bin}_k) = \frac{\exp\left[-(a_r - c_k)^2 / T\right]}{\sum_{j=1}^K \exp\left[-(a_r - c_j)^2 / T\right]}
+$$
+Where $T$ is a temperature parameter that controls the sharpness of the bins. This formulation provides the smooth, continuous gradients necessary for the optimization algorithm while faithfully representing discrete states as $T \to 0$.
+
+Finally, to guide the gradient descent, we must compute the exact joint entropy of the array. 
+%Common probability density estimators (like Kernel Density Estimation) fail drastically in high dimensions. Instead, for arrays of a tractable size, 
+We employ an exact state enumeration approach. We expose the array to a batch of $B$ environmental ligands. Because the individual receptors respond independently to a given ligand $\ell$, the probability of the entire array expressing a specific discrete state $\mathcal{A} = (s_1, \dots, s_N)$ is simply the product of the individual receptor probabilities. The overall probability of observing state $\mathcal{A}$ in the environment is the average across the batch:
+$$
+P(\mathcal{A}) = \frac{1}{B} \sum_{\ell=1}^B \prod_{r=1}^N P(a_{r,\ell} \in \text{bin}_{s_r})
+$$
+From this exact probability distribution, the joint Shannon entropy is explicitly calculated as $H(\mathcal{A}) = -\sum_{\mathcal{A}} P(\mathcal{A}) \log_2 P(\mathcal{A})$. By differentiating this exact analytical entropy, the gradient descent can precisely navigate the high-dimensional chemical space to maximize the true coding capacity of the array.
+
+\section{Results}
+
+\subsection{Single familly optimization}
+\begin{figure}
+    \includegraphics[width=\linewidth]{entropy_distance.pdf}
+    \caption{\label{fig:entropy_distance}Statistics of the optimization of 5 homo-pentamers over a single family of ligand. Left hand side, the evolution of the mutual information, the first data point is in a different scale and is separated by 100 optimizattion steps with the second point. Right hand side, we see that the optimization correspond to an increase of the average inter distance between receptors defined as $d = \sum_{u,u'} \|\textbf{v}_u - \textbf{v}_{u'}\|$}
+\end{figure}
+We first test our optimization procedure in a simple environment consisting of a single ligand family in a 3-dimensional chemical space. We evaluate an array of 5 receptors, each functioning as an independent homo-pentamer (meaning the 5 subunits within a receptor are identical). 
+As shown in Fig.~\ref{fig:entropy_distance}, the mutual information (MI) rapidly grows and then plateaus, indicating that the optimization has converged. During this process, the individual receptors evolve to mathematically repel each other, maximizing their distances in the latent space to cover as much of the chemical environment as possible. This divergence is visualized using a 2D UMAP projection in Fig.~\ref{fig:1fam_latent}.
+
+\begin{figure}
+    \includegraphics[width=0.45\textwidth]{1fam_5sensor_homo.pdf}
+    \caption{\label{fig:1fam_latent}Chemical, latent space representation of the optimization of 5 homo-pentamers. The gradient of color is proportional to the probability of drawing a ligand from that family. The center of the distribution is the blue dot. The closer a receptor is to a ligand, the larger their affinity. 
+    Notice that the UMAP representation distord the geometry, and does not conserve  the distances.}
+\end{figure}
+
+Next, we investigate how the MI evolves as we vary the number of receptors and available genes. The core objective of this project is to quantify how heteromerization brings about additional information for a strictly fixed number of coding genes. In Fig.~\ref{fig:MI_sensors_1fam}, we compare an array composed entirely of distinct homo-pentamers (where each receptor uses a unique gene, blue line) against arrays built via heteromerization (mixing a smaller, restricted pool of genes). This comparison highlights three critical behaviors:
+First, when the number of heteromerized receptors is less than or equal to the number of available genes, the array optimizes to behave exactly like an independent receptor array. 
+Second, when the number of receptors exceeds the number of available genes, the mutual information keeps increasing. This directly showcases that heteromerization can be utilized to extract more information from the environment at a fixed number of genes. 
+Third, as expected, for a fixed number of total receptors, it is always more efficient to have independent ones (meaning one unique gene per receptor) rather than heteromers, due to the unavoidable chemical correlations introduced by shared subunits.
+
+However, we observe in Fig.~\ref{fig:MI_sensors_1fam} that even the ideal homomeric array fails to achieve perfect coding. This plateau occurs because the 1-family environment is simply too simple to fully utilize the theoretical capacity of the receptor array. This prompts us to investigate the opposite extreme: a highly complex environment.
+
+%We can observe Fig.~\ref{fig:entropy_distance} that after a rapid  growth of mutual information (MI), the entropy each a plateau, suggesting that the optimization procedure has converged. In the mean time, we observe that individual receptor evolve to maximize their distance in the latent space.
+%This evolution can be qualitatively represented by projecting the chemical properties in 2D using UMAP in Fig.~\ref{fig:1fam_latent}.
+
+%Next, we investigate how the MI evolve with the number of receptors, and genes. In fig.~\ref{fig:MI_sensors_1fam} we compare the situation where every receptor is encoded by a different gene (blue line) with different heteromerization with several genes. We notice that heteromerization always brings about additional information on the environment, but is always less effective than the corresponding homomers.
+%However, we observe that even the homomers do not provide a perfect coding. This is due to the complexity of the environment that is not sufficient to explore all the possible value that the array of sensor can take. Next, we investigate the opposite limite of an "infinitely complex environment"
+%\begin{figure*}[!htbp]
+%    \begin{minipage}{0.48\textwidth}
+%        \includegraphics[width=\linewidth]{entropy_distance.pdf}
+%        \caption{\label{fig:entropy_distance}Statistics of the optimization of 5 homo-pentamers over a single family of ligand. Left hand side, the evolution of the mutual information, the first data point is in a different scale and is separated by 100 optimizattion steps with the second point. Right hand side, we see that the optimization correspond to an increase of the average inter distance between receptors defined as $d = \sum_{u,u'} \|\textbf{v}_u - \textbf{v}_{u'}\|$}
+%    \end{minipage}\hfill
+%    \begin{minipage}{0.48\textwidth}
+%        \includegraphics[width=\linewidth]{1fam_5sensor_homo.pdf}
+%        \caption{\label{fig:1fam_latent}Chemical, latent space representation of the optimization of 5 homo-pentamers. The gradient of color is proportional to the probability of drawing a ligand from that family. The center of the distribution is the blue dot. Notice that the UMAP representation distord the geometry, and does not conserve  the distances.}
+%    \end{minipage}
+%\end{figure*}
+\begin{figure}[!htbp]
+    \includegraphics[width=0.45\textwidth]{MI_sensors_1fam.pdf}
+    \caption{\label{fig:MI_sensors_1fam}Mutual information of an array of receptors over a single family of ligand. The blue line represents 5 independant homo-pentamers, whereas the other line use less genes to encode the same number of ligands. To generate more receptors, we select a single random combination of hetero-pentamers. We illustrate the specific hetero-pentamer combination used around the yellow curve.}
+\end{figure}
+
+\subsection{Highly complex environment}
+
+\begin{figure}
+        \includegraphics[width=0.45\textwidth]{10fam_5sensor.pdf}
+        \caption{\label{fig:10_fam_latent}Chemical latent space representation of an optimized array of 5 homo-pentamers across 10 distinct ligand families. The environmental probability distributions of the different families are kept close enough to slightly overlap, avoiding isolated vacuums. As in the single-family case, this 2D projection distorts the true 10-dimensional geometric distances.}
+\end{figure}
+
+%Here, we demonstrate how a chemically complex environment unlocks higher mutual information. We construct this environment using 10 distinct ligand families scattered across a 10-dimensional chemical space. A qualitative representation of this rich environment and the optimized receptor array is provided in Fig.~\ref{fig:10_fam_latent}. We intentionally keep the families close enough that their ligand distributions slightly overlap; this prevents isolated "vacuums" in the probability space, which currently challenge the convergence of our optimization algorithm (an algorithmic limitation we plan to resolve in future work).
+Here, we demonstrate how a chemically complex environment unlocks higher mutual information. We construct this environment using 10 distinct ligand families scattered across a 10-dimensional chemical space. A qualitative representation of this rich environment and the optimized receptor array is provided in Fig.~\ref{fig:10_fam_latent}. We intentionally keep the families close enough that their ligand distributions slightly overlap; this prevents isolated "vacuums" in the probability space, which currently challenge the convergence of our optimization algorithm (an algorithmic limitation we plan to resolve in future work).
+We observe that similarly than in the one family case, receptors tends to increase their inter-distance. In the case of several families, they start to behave like specialists of the individual families.
+
+Finally, looking at the mutual information curves in Fig.~\ref{fig:MI_Nsens}, we confirm these three behaviors in the high-complexity regime. Because this environment provides sufficient high-dimensional complexity, the mutual information of the purely homomeric array scales near-perfectly without artificially plateauing. In this unrestricted regime, the ability of heteromerization to continually generate novel, functional information beyond the strict genetic limit is demonstrated even more clearly.
+
+\begin{figure}
+        \includegraphics[width=0.45\textwidth]{MI_sensors_10fam.pdf}
+        \caption{\label{fig:MI_Nsens}Mutual information of the receptor array in the highly complex 10-family environment. The curves compare the performance of purely distinct homo-pentamers against arrays built via heteromerization. Because this environment provides sufficient high-dimensional complexity, the mutual information of homo-pentamers behave like a ideal array. This guarantees that the reduced mutual information of the heteromerized array results from the chemical correlation.}
+\end{figure}
+%\begin{figure*}[!htbp]
+%    \begin{minipage}{0.48\textwidth}
+%        \includegraphics[width=\linewidth]{10fam_5sensor.pdf}
+%        \caption{\label{fig:10_fam_latent}Chemical latent space representation of an optimized array of 5 homo-pentamers across 10 distinct ligand families. The environmental probability distributions of the different families are kept close enough to slightly overlap, avoiding isolated vacuums. As in the single-family case, this 2D projection distorts the true 10-dimensional geometric distances.}
+%    \end{minipage}\hfill
+%    \begin{minipage}{0.48\textwidth}
+%        \includegraphics[width=\linewidth]{MI_sensors_10fam.pdf}
+%        \caption{\label{fig:MI_Nsens}Mutual information of the receptor array in the highly complex 10-family environment. The curves compare the performance of purely distinct homo-pentamers against arrays built via heteromerization. Because this environment provides sufficient high-dimensional complexity, the mutual information of homo-pentamers behave like a ideal array. This guarantees that the reduced mutual information of the heteromerized array results from the chemical correlation.}
+%    \end{minipage}
+%\end{figure*}
+
+\section{Perspectives}
+
+Moving forward, we plan to expand our framework to address several key biological and computational questions.
+
+First, we will disentangle the mutual information to independently investigate the array's performance in decoding ligand identity versus ligand concentration. While our current metric evaluates overall informational capacity, it remains an open question whether combinatorial heteromerization offers a specific coding advantage for distinguishing between closely related chemicals, or if it is primarily a mechanism for resolving concentration gradients across a vast dynamic range.
+
+Second, we aim to improve our optimization algorithm to handle highly distinct, well-separated ligand families. Currently, our gradient descent requires environmental probability distributions to slightly overlap to avoid computational "vacuums" in the latent space. By upgrading the algorithm to navigate across empty chemical spaces, we can simulate more complex environments with sharply defined, non-overlapping odor categories and rigorously test how heteromerization performs under these stricter environmental constraints. Furthermore, we will systematically study the influence of the chemical latent space's dimensionality. By varying this dimension, we will ensure that our conclusions regarding the coding efficiency of heteromers are robust, fundamental properties of the array, rather than artifacts of contingent choices made while modeling the environment.
+
+Finally, we will use our computational framework to address a compelling biological paradox observed in experimental data: very few homopentamers appear to be actively receptive to the tested ligand panels, with many remaining seemingly "silent." We hypothesize that the receptor array is evolutionarily optimized (e.g., to maximize mutual information) across a vast and highly diverse natural chemical environment encompassing many distinct odor families. However, laboratory experiments are inherently constrained to test only a small subspace of this chemical diversity (typically around 100 specific ligands). To computationally evaluate this, we will first optimize our simulated array across a broad, multi-family environment. We will then mimic the laboratory constraints by computing the activation probability of the resulting homopentamers strictly against a small, restricted subset of the total environment. By comparing these activation rates, we can explicitly test whether optimizing for global environmental diversity naturally produces "silent" homopentamers when tested against a limited laboratory panel.
+
+\begin{thebibliography}{9}
+    \bibitem{MWC}
+    Einav, Tal, and Rob Phillips. “Monod-Wyman-Changeux Analysis of Ligand-Gated Ion Channel Mutants.” The Journal of Physical Chemistry B 121, no. 15 (2017): 3813–24. https://doi.org/10.1021/acs.jpcb.6b12672.
+    \bibitem{map}
+    Lee, Brian K., Emily J. Mayhew, Benjamin Sanchez-Lengeling, et al. “A Principal Odor Map Unifies Diverse Tasks in Olfactory Perception.” Science 381, no. 6661 (2023): 999–1006. https://doi.org/10.1126/science.ade4401.
+    \label{LastBibItem}
+\end{thebibliography}
+\end{document}

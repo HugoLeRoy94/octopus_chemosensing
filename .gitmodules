@@ -1,0 +1,9 @@
+[submodule "optimization"]
+	path = optimization
+	url = https://github.com/username/optimization-submodule.git
+[submodule "optimization_binary"]
+	path = optimization_binary
+	url = https://github.com/HugoLeRoy94/optimize_binary_entropy.git
+[submodule "publications"]
+	path = publications
+	url = https://github.com/osmoai/publications.git
