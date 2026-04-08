@@ -7,3 +7,6 @@
 [submodule "publications"]
 	path = publications
 	url = https://github.com/osmoai/publications.git
+[submodule "opt_bin_resp"]
+	path = opt_bin_resp
+	url = https://github.com/HugoLeRoy94/opt_bin_resp.git
