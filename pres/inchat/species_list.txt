@@ -1,0 +1,4 @@
+Homo sapiens
+Macaca mulatta
+Octopus vulgaris
+Loligo vulgaris
