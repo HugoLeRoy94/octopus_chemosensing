@@ -155,18 +155,36 @@ P(\mathcal{A}) = \frac{1}{B} \sum_{\ell=1}^B \prod_{r=1}^N P(a_{r,\ell} \in \tex
 $$
 From this exact probability distribution, the joint Shannon entropy is explicitly calculated as $H(\mathcal{A}) = -\sum_{\mathcal{A}} P(\mathcal{A}) \log_2 P(\mathcal{A})$. By differentiating this exact analytical entropy, the gradient descent can precisely navigate the high-dimensional chemical space to maximize the true coding capacity of the array.
 
+\subsection{Disentangling Information: Ligand Identity vs. Concentration}
+
+While the total mutual information $I(\mathcal{A};(c,\ell))$ provides a global metric for the array's coding capacity, a biological system such as an octopus may not optimize its sensory apparatus to maximize this total information blindly. Depending on ecological pressures, accurately identifying the chemical nature of a ligand (its family) might carry a vastly different biological value than precisely resolving its environmental concentration $c$. To account for these distinct evolutionary objectives, we decompose the total mutual information to independently measure the array's ability to encode ligand identity versus concentration. 
+
+
+We define the ligand family as a discrete variable $F$, grouping distinct chemicals into generic probability clouds. The mutual information between the array's activity $\mathcal{A}$ and the ligand family $F$ is given by:
+\begin{equation}
+I(\mathcal{A}; F) = H(\mathcal{A}) - H(\mathcal{A} | F)
+\end{equation}
+Here, $H(\mathcal{A})$ is the unconditioned Shannon entropy of the array's responses. The conditional entropy $H(\mathcal{A} | F)$ represents the remaining uncertainty in the array's activity when the ligand family is known. Computationally, this is evaluated by masking the continuous relaxation assignments to isolate specific families, computing the entropy for each, and averaging across all unique families present in the evaluation batch. 
+
+Similarly, we can isolate the information the array encodes specifically about the ligand's concentration $c$:
+\begin{equation}I(\mathcal{A}; c) = H(\mathcal{A}) - H(\mathcal{A} | c)\end{equation}
+Because the concentration $c$ is drawn from a continuous Log-Normal distribution, calculating the conditional entropy $H(\mathcal{A} | c)$ requires discretization. We achieve this by sorting the environmental batch by concentration and partitioning it into $N_c$ equally sized bins. The conditional entropy is then approximated as the average joint entropy of the array's activity within each discrete concentration bin. 
+
+By tracking these two metrics independently, we can explicitly test whether combinatorial heteromerization offers a specific coding advantage for distinguishing between distinct chemical families, or if it primarily serves as a mechanism to resolve concentration gradients across a vast dynamic range.
+
+
 \section{Results}
 
 \subsection{Single familly optimization}
 \begin{figure}
-    \includegraphics[width=\linewidth]{entropy_distance.pdf}
+    \includegraphics[width=\linewidth]{../figures/entropy_distance.pdf}
     \caption{\label{fig:entropy_distance}Statistics of the optimization of 5 homo-pentamers over a single family of ligand. Left hand side, the evolution of the mutual information, the first data point is in a different scale and is separated by 100 optimizattion steps with the second point. Right hand side, we see that the optimization correspond to an increase of the average inter distance between receptors defined as $d = \sum_{u,u'} \|\textbf{v}_u - \textbf{v}_{u'}\|$}
 \end{figure}
 We first test our optimization procedure in a simple environment consisting of a single ligand family in a 3-dimensional chemical space. We evaluate an array of 5 receptors, each functioning as an independent homo-pentamer (meaning the 5 subunits within a receptor are identical). 
 As shown in Fig.~\ref{fig:entropy_distance}, the mutual information (MI) rapidly grows and then plateaus, indicating that the optimization has converged. During this process, the individual receptors evolve to mathematically repel each other, maximizing their distances in the latent space to cover as much of the chemical environment as possible. This divergence is visualized using a 2D UMAP projection in Fig.~\ref{fig:1fam_latent}.
 
 \begin{figure}
-    \includegraphics[width=0.45\textwidth]{1fam_5sensor_homo.pdf}
+    \includegraphics[width=0.45\textwidth]{../figures/1fam_5sensor_homo.pdf}
     \caption{\label{fig:1fam_latent}Chemical, latent space representation of the optimization of 5 homo-pentamers. The gradient of color is proportional to the probability of drawing a ligand from that family. The center of the distribution is the blue dot. The closer a receptor is to a ligand, the larger their affinity. 
     Notice that the UMAP representation distord the geometry, and does not conserve  the distances.}
 \end{figure}
@@ -194,14 +212,14 @@ However, we observe in Fig.~\ref{fig:MI_sensors_1fam} that even the ideal homome
 %    \end{minipage}
 %\end{figure*}
 \begin{figure}[!htbp]
-    \includegraphics[width=0.45\textwidth]{MI_sensors_1fam.pdf}
+    \includegraphics[width=0.45\textwidth]{../figures/MI_sensors_1fam.pdf}
     \caption{\label{fig:MI_sensors_1fam}Mutual information of an array of receptors over a single family of ligand. The blue line represents 5 independant homo-pentamers, whereas the other line use less genes to encode the same number of ligands. To generate more receptors, we select a single random combination of hetero-pentamers. We illustrate the specific hetero-pentamer combination used around the yellow curve.}
 \end{figure}
 
 \subsection{Highly complex environment}
 
 \begin{figure}
-        \includegraphics[width=0.45\textwidth]{10fam_5sensor.pdf}
+        \includegraphics[width=0.45\textwidth]{../figures/10fam_5sensor.pdf}
         \caption{\label{fig:10_fam_latent}Chemical latent space representation of an optimized array of 5 homo-pentamers across 10 distinct ligand families. The environmental probability distributions of the different families are kept close enough to slightly overlap, avoiding isolated vacuums. As in the single-family case, this 2D projection distorts the true 10-dimensional geometric distances.}
 \end{figure}
 
@@ -212,7 +230,7 @@ We observe that similarly than in the one family case, receptors tends to increa
 Finally, looking at the mutual information curves in Fig.~\ref{fig:MI_Nsens}, we confirm these three behaviors in the high-complexity regime. Because this environment provides sufficient high-dimensional complexity, the mutual information of the purely homomeric array scales near-perfectly without artificially plateauing. In this unrestricted regime, the ability of heteromerization to continually generate novel, functional information beyond the strict genetic limit is demonstrated even more clearly.
 
 \begin{figure}
-        \includegraphics[width=0.45\textwidth]{MI_sensors_10fam.pdf}
+        \includegraphics[width=0.45\textwidth]{../figures/MI_sensors_10fam.pdf}
         \caption{\label{fig:MI_Nsens}Mutual information of the receptor array in the highly complex 10-family environment. The curves compare the performance of purely distinct homo-pentamers against arrays built via heteromerization. Because this environment provides sufficient high-dimensional complexity, the mutual information of homo-pentamers behave like a ideal array. This guarantees that the reduced mutual information of the heteromerized array results from the chemical correlation.}
 \end{figure}
 %\begin{figure*}[!htbp]

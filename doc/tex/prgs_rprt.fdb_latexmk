@@ -1,15 +1,20 @@
 # Fdb version 4
-["bibtex prgs_rprt"] 1774349873.30159 "prgs_rprt.aux" "prgs_rprt.bbl" "prgs_rprt" 1774528896.50162 0
-  "./prgs_rprtNotes.bib" 1774528896.08965 104 4d8bb863c86f3d7b03a471e9d4707f34 ""
+["bibtex prgs_rprt"] 0 "prgs_rprt.aux" "prgs_rprt.bbl" "prgs_rprt" 1776264309.58034 0
+  "./prgs_rprtNotes.bib" 1776264309.12575 104 4d8bb863c86f3d7b03a471e9d4707f34 ""
   "/usr/share/texlive/texmf-dist/bibtex/bst/revtex/apsrev4-2.bst" 1601932770 69609 e9dea59f0e753ccda3ddc8f5806d846d ""
-  "prgs_rprt.aux" 1774364096.21746 32 3985256e7290058c681f74d7a3565a19 "pdflatex"
+  "prgs_rprt.aux" 0 -1 0 "pdflatex"
   (generated)
   "prgs_rprt.bbl"
   "prgs_rprt.blg"
   (rewritten before read)
-["pdflatex"] 1774528895.41828 "/mnt/hcleroy/PostDoc2/octopus_smelling/doc/prgs_rprt.tex" "prgs_rprt.pdf" "prgs_rprt" 1774528896.50192 0
+["pdflatex"] 1776264308.48062 "/mnt/hcleroy/PostDoc2/octopus_smelling/doc/tex/prgs_rprt.tex" "prgs_rprt.pdf" "prgs_rprt" 1776264309.58058 0
+  "../figures/10fam_5sensor.pdf" 1775647419.64589 154033 e820387ed4c88afa133df0864ae2f023 ""
+  "../figures/1fam_5sensor_homo.pdf" 1775647419.6471 80386 8a390cb971b85644a77886baebaa73a3 ""
+  "../figures/MI_sensors_10fam.pdf" 1775647419.64925 30099 b2038eabe5f82d8f17a0b0d0827b4ca5 ""
+  "../figures/MI_sensors_1fam.pdf" 1775647419.64753 33100 42a5e3f105807b77e7b92d86dc51a7d1 ""
+  "../figures/entropy_distance.pdf" 1775647419.64886 16829 be43e8ea52416572c011e228b6284b5c ""
   "/etc/texmf/web2c/texmf.cnf" 1772314267.96534 475 c0e671620eb5563b2130f56340a5fde8 ""
-  "/mnt/hcleroy/PostDoc2/octopus_smelling/doc/prgs_rprt.tex" 1774528894.12064 29627 f776ca3ebccfcdbb8d5c4cacfa3238f5 ""
+  "/mnt/hcleroy/PostDoc2/octopus_smelling/doc/tex/prgs_rprt.tex" 1776264306.97966 32085 463b977f95db250164a42512dab00cbd ""
   "/usr/share/texlive/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/jknappen/ec/ecbx0500.tfm" 1136768653 3584 0913860e6fa2bdf78ecaf460b391112b ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/jknappen/ec/ecbx0600.tfm" 1136768653 3584 ad9fcbc26a2a7bccd6d08b0a5792fbe0 ""
@@ -145,15 +150,10 @@
   "/usr/share/texmf/web2c/texmf.cnf" 1707919699 40399 f2c302f7d2af602abb742093540a5834 ""
   "/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map" 1772314291.70903 5472669 54eaf61a88b6b7896ebd0dac973cb29c ""
   "/var/lib/texmf/web2c/pdftex/pdflatex.fmt" 1772314382 8214550 7498bbaf042e0f5d732684408b013b4e ""
-  "10fam_5sensor.pdf" 1774373390.93994 154033 e820387ed4c88afa133df0864ae2f023 ""
-  "1fam_5sensor_homo.pdf" 1774362313.31513 80386 8a390cb971b85644a77886baebaa73a3 ""
-  "MI_sensors_10fam.pdf" 1774452256.41776 30099 b2038eabe5f82d8f17a0b0d0827b4ca5 ""
-  "MI_sensors_1fam.pdf" 1774449113.54816 33100 42a5e3f105807b77e7b92d86dc51a7d1 ""
-  "entropy_distance.pdf" 1774361988.62339 16829 be43e8ea52416572c011e228b6284b5c ""
-  "prgs_rprt.aux" 1774528896.08865 7232 bd45c649709f81eb5e858b25825f29fa "pdflatex"
-  "prgs_rprt.bbl" 1774349873.47373 0 d41d8cd98f00b204e9800998ecf8427e "bibtex prgs_rprt"
-  "prgs_rprt.out" 1774528896.08965 2603 6745b3cbb70dc8a5190e4c9ef25aced1 "pdflatex"
-  "prgs_rprt.tex" 1774528894.12064 29627 f776ca3ebccfcdbb8d5c4cacfa3238f5 ""
+  "prgs_rprt.aux" 1776264309.12444 7394 131262d6501449ee18b397b3164d4059 "pdflatex"
+  "prgs_rprt.bbl" 1775647419.65117 0 d41d8cd98f00b204e9800998ecf8427e "bibtex prgs_rprt"
+  "prgs_rprt.out" 1776264309.12444 2974 d0fb0802d2e298d7b4bd2dcc957e1c10 "pdflatex"
+  "prgs_rprt.tex" 1776264306.97966 32085 463b977f95db250164a42512dab00cbd ""
   (generated)
   "prgs_rprt.aux"
   "prgs_rprt.log"

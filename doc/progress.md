@@ -171,11 +171,13 @@ We assume that the receptor array is designed for sensing a large number of liga
 
 The fundamental assumption is that a smaller geometric distance in this latent space corresponds to stronger chemical binding (lower energy).
 
+Additionally, we allow every units to "specialize" in a specific type of interaction, thus adding a weight vector $w_u$ to allow units to be more or less sensitive to the distance in a specific dimension.
+
 **1. Open State Energy:**
 The mean interaction energy for the open state, $\mu_o^{(u,f)}$, is derived from the squared Euclidean distance between the unit and the family embeddings:
 
 
-$$\mu_o^{(u,f)} = E_{\text{base}}^{(u)} + \|v_u - v_f\|^2$$
+$$\mu_o^{(u,f)} = E_{\text{base}}^{(u)} + \|w_u(v_u - v_f)\|^2$$
 
 
 where $E_{\text{base}}^{(u)}$ is a baseline energy parameter for unit $u$, initialized around the global average expected log concentration to ensure stable gradients.
