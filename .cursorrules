@@ -1,0 +1,25 @@
+# Octopus Chemosensing Project - AI Assistant Rules
+
+## Project Overview
+This project simulates the chemo-sensory receptor array of octopuses. We optimize the mutual information between an array of combinatorial ion channels (hetero-pentamers) and a high-dimensional chemical latent space representing ligand families.
+
+## Tech Stack & Coding Constraints
+- **Language:** Python 3.10+
+- **Deep Learning:** PyTorch.
+- **Performance:** Strictly use vectorized tensor operations. Avoid Python `for` loops for mathematical operations.
+- **Environment:** The code runs inside a headless Docker container on a remote A100 GPU cluster.
+
+## Documentation Map
+If you need specific mathematical or biophysical context, refer to the files in `/mnt/hcleroy/PostDoc2/octopus_smelling/doc/theory/`. Do NOT hallucinate equations:
+- **Nomenclature & Vars:** `01_nomenclature.md` (Definitions, Vocab, Experimentalist mapping).
+- **Receptor Physics:** `02_biophysics_mwc.md` (MWC model equations, microscopic interactions).
+- **Environment & Latent Space:** `03_latent_environment.md` (Embeddings, distances, energy sampling).
+- **Continuous Info Theory:** `04_continuous_information.md` (KDE, Covariance approximation).
+- **Discrete Loss & Soft Bins:** `05_discrete_optimization.md` (Threshold relaxations, Soft Histograms).
+- **Computational Limits:** `06_computational_limits.md` (Memory footprint scaling, tensor bottlenecks, algorithmic fallbacks).
+- **Academic Context:** `/mnt/hcleroy/PostDoc2/octopus_smelling/doc/tex/prgs_rprt.tex`
+
+## Mathematical Definitions Reference
+- $k_{sub}$: Number of sub-units in a receptor (typically 5).
+- $EC_{50}$: The concentration at half activation. For a heteromer, this is the geometric mean of its individual subunit affinities.
+- $T$: Temperature parameter used in the continuous relaxation of the step-function (Soft Histogram).
