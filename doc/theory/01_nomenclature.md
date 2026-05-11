@@ -23,6 +23,12 @@
 
 - $\theta = \{(\Delta E_\alpha^{(r,\ell)})_{\alpha,\ell}, \epsilon_r\}_r = \{\theta_r\}_r$ compact indexing for the characteristics of a channel
 
+- $E_{\text{base}}^{(u)}$: per-unit learnable parameter. Open-state energy at the perfectly matched ligand ($\mathbf{v}_\ell = \mathbf{v}_u$). Equals $\Delta E_o^{(u,\text{opt})} - \epsilon_u$ and directly sets the EC50 at the optimal ligand.
+
+- $E_{\text{max}}^{(u)}$: per-unit learnable parameter (constrained $> 0$). Maximum additional energy cost incurred by a fully mismatched ligand. Controls how selective each unit is.
+
+- $\lambda$ (affinity length scale): global scalar **hyperparameter** (not learned). Controls the breadth of the saturating affinity kernel — the characteristic distance in latent space beyond which a ligand is considered fully mismatched.
+
 - $\bar{M} = \{ \mu_\alpha^{(r,f)} \}_{r,f}$ and  $\bar{\Sigma} = \{ \sigma_\alpha^{(r,f)}\}_{r,f}$: respectively the matrix of the mean and std deviation of the distribution from which the energies are drawn for the receptor $r$ in response to the family of ligands $f$. <font color="red"> should the matrices depends on alpha, or should one be a shifted version of the other. In anyway the shift should be the same for every ligands, for a given receptor</font>
 
 - $w$ generic name for $\mu_\alpha^{(r,f)}$ and $\sigma_\alpha^{(r,f)}$.

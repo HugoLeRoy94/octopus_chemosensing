@@ -10,6 +10,7 @@ p_o^r(c,\ell) = \frac{\prod_{u\in \mathcal{U}} (1+c/K_o^{(u,\ell)})}{\prod_{u\in
 $$
 
 Where the $K$'s are called the affinities.
+
 ### 2.2 Microscopic model of a receptor
 To make the link between the dissociation constant, we consider the chemical reactions:
 $$
@@ -48,7 +49,9 @@ We write it as the simple sum of the contribution of each individual unit:
 $$
 \epsilon_\mathcal{U} = \sum_u \epsilon_u
 $$
-
+$$
+\epsilon_u = E_u(\text{closed}) - E_u(\text{open})
+$$
 ### 2.3 Parameters Degeneracy
 
 in [http://dx.doi.org/10.1021/acs.jpcb.6b12672] supplementary material, p.S25, they look at the hessian matrix:
@@ -60,7 +63,7 @@ $\left(e^{\beta \epsilon/2} + e^{\beta \epsilon/2} \frac{c}{K_o}\right)^2+\left(
 $$
 p_o^{(r,l)}(c) = \frac{\prod_u \left(\frac{c}{\tilde{K}_o^{u,l}}\right)}{\prod_u\left(\frac{c}{\tilde{K}_o^{(u,l)}} \right) + \prod_u\left(1+\frac{c}{K_c^{(u,l)}} \right)},
 $$
-where $\tilde{K}_o^{(u,\ell)} = K_o^{(u,\ell)} e^{\beta \epsilon_\mathcal{U} / k_\text{sub}}$.
+where $\tilde{K}_o^{(u,\ell)} = K_o^{(u,\ell)} e^{- \beta \epsilon_\mathcal{U} / k_\text{sub}}$.
 
 ### 2.4 Half-Activation Concentration ($EC_{50}$) Limit
 
@@ -70,3 +73,18 @@ Remarkably, the half-activation concentration for a heteromer is simply the geom
 $$EC_{50}^{(r,\ell)} = \left( \prod_{u=1}^{k_\text{sub}} \tilde{K}_o^{(u,\ell)} \right)^{1/k_\text{sub}}$$
 
 As a result, a receptor's response to a ligand is fully defined by a single set of parameters: the effective open-state dissociation constants of its individual subunits. This effectively allows us to mathematically bypass modeling the closed states ($K_c$) in downstream algorithms.
+
+### 2.5 Interaction energies
+
+In term of interaction energy, we can write the dissociation constant as :
+$$
+\Delta E_o^{(u,\ell)} = E(u_oL) - E(u_o) - E(L)
+$$
+with $\epsilon_u = E_u(\text{closed}) - E_u(\text{open})$, we get
+$$
+\begin{aligned}
+EC_{50}^{(r,\ell)} &= \exp \left[ \frac{1}{k_\text{sub}} \sum_{u=1}^{k_\text{sub}}E(u_oL) - E(u_o) - E(L) - E(u_c) + E(u_o) \right]\\
+&= \exp \left[ \frac{1}{k_\text{sub}} \sum_{u=1}^{k_\text{sub}}\tilde{E}_o^{(u,\ell)} \right ]
+\end{aligned}
+$$
+where $\tilde{E}_o^{(u,\ell)} = E(u_oL) - E(L) - E(u_c) = \Delta E_o^{(u,\ell)} - \epsilon_u$ is the effective open-state energy. The specific functional form used to parameterize $\tilde{E}_o^{(u,\ell)}$ in the latent space is described in Section 3.1; in the current implementation it takes the form $E_{\text{base}}^{(u)} + E_{\text{max}}^{(u)}(1 - e^{-\|\mathbf{v}_u - \mathbf{v}_\ell\|^2/\lambda^2})$, where $E_{\text{base}}^{(u)} = \tilde{E}_o^{(u,\ell_\text{opt})}$ is the value at the optimally matched ligand.

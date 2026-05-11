@@ -1,6 +1,12 @@
 # 5. Discrete Optimization & The Rényi Entropy Proxy
 
-To computationally optimize the receptor array, our objective is to tune the chemical affinities of each genetic subunit—specifically their baseline energies $E_{\text{base}}^{(u)}$ and their coordinate vectors $\textbf{v}_u$ in the latent space. We want the full array to produce the widest possible variety of distinct activation patterns, effectively maximizing the mutual information between the environment and the array's responses.
+To computationally optimize the receptor array, our objective is to tune the chemical affinities of each genetic subunit. Three per-unit parameters are jointly learned by gradient descent:
+
+* $E_{\text{base}}^{(u)}$: the open-state energy at the optimal (zero-distance) ligand, which sets each unit's baseline EC50.
+* $E_{\text{max}}^{(u)}$: the maximum extra energy cost for a fully mismatched ligand, which controls selectivity breadth (constrained $> 0$).
+* $\mathbf{v}_u \in \mathbb{R}^D$: the coordinate of the unit in the chemical latent space, which determines which ligands are "close" (high affinity) versus "far" (low affinity).
+
+The global affinity length scale $\lambda$ is a fixed hyperparameter, not learned. Together, these parameters define the saturating affinity kernel described in Section 3.1. We want the full array to produce the widest possible variety of distinct activation patterns, effectively maximizing the mutual information between the environment and the array's responses.
 
 ## 5.1 The Optimization Challenge
 Because downstream neural processing relies on highly thresholded, discrete signals (e.g., firing vs. silent), we want to optimize for discrete diversity. However, gradient descent cannot optimize sharp, discrete step-functions (Heaviside functions) because their gradients are zero almost everywhere. 

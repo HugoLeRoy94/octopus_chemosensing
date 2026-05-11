@@ -4,23 +4,43 @@ In previous iterations, the interaction energies between receptors and ligand fa
 
 ### 3.1 Chemical Latent Space and Affinities
 
-We assume that the receptor array is designed for sensing a large number of ligands categorized into broad chemical families. Instead of building independent microscopic interactions, each unit $u$, ligand family $f$, and specific ligand $\ell$ is assigned a vector embedding in a $D$-dimensional latent space:
+We assume that the receptor array is designed for sensing a large number of ligands categorized into broad chemical families. Instead of building independent microscopic interactions, each unit $u$ and specific ligand $\ell$ is assigned a vector embedding in a $D$-dimensional latent space:
 
-* $v_u \in \mathbb{R}^D$: The learnable latent representation of a protein unit.
-* $v_f \in \mathbb{R}^D$: The fixed latent representation of a ligand family, normalized to a unit hypersphere.
-* $v_\ell \in \mathbb{R}^D$: The fixed base coordinate of a specific ligand $\ell$.
+* $\mathbf{v}_u \in \mathbb{R}^D$: The learnable latent coordinate of a protein unit.
+* $\mathbf{v}_\ell \in \mathbb{R}^D$: The fixed base coordinate of a specific ligand $\ell$.
 
-The fundamental assumption is that a smaller geometric distance in this latent space corresponds to stronger chemical binding (lower energy).
+The fundamental assumption is that a smaller geometric distance in this latent space corresponds to stronger chemical binding (lower open-state energy).
 
-Additionally, we allow every unit to "specialize" in a specific type of interaction, thus adding a weight vector $w_u$ to allow units to be more or less sensitive to the distance in a specific dimension.
+**Open-State Energy — Saturating Affinity Kernel:**
+The instantaneous open-state interaction energy between unit $u$ and observed ligand $\ell$ is:
 
-**Open State Energy Calculation:**
-The instantaneous interaction energy for the open state between a unit $u$ and a specific observed ligand is derived from their squared Euclidean distance:
+$$\boxed{E_o^{(u,\ell)} = E_{\text{base}}^{(u)} + E_{\text{max}}^{(u)} \cdot \left(1 - \exp\!\left(-\frac{\|\mathbf{v}_u - \mathbf{v}_{\text{obs},\ell}\|^2}{\lambda^2}\right)\right)}$$
 
-$$E_o^{(u,\ell)} = E_{\text{base}}^{(u)} + \|\textbf{v}_u - \textbf{v}_{\text{obs},\ell}\|_W^2$$
+Three parameters shape this expression:
 
+| Parameter | Type | Physical meaning |
+|---|---|---|
+| $E_{\text{base}}^{(u)}$ | per-unit, **learned** | Open-state energy at the **optimal** ligand ($\mathbf{v}_\ell = \mathbf{v}_u$, i.e. zero distance). Equals $\Delta E_o^{(u,\text{opt})} - \epsilon_u$ from the MWC derivation (Section 2.5). The EC50 at the perfectly matched ligand is $\exp[E_{\text{base}}^{(u)}]$. |
+| $E_{\text{max}}^{(u)}$ | per-unit, **learned** (constrained $> 0$ via softplus) | Maximum extra energy cost for a fully mismatched ligand. As $\|\mathbf{v}_u - \mathbf{v}_\ell\| \to \infty$, $E_o \to E_{\text{base}}^{(u)} + E_{\text{max}}^{(u)}$. Controls how selective each unit is. |
+| $\lambda$ | global, **fixed hyperparameter** | Affinity length scale — the characteristic distance beyond which a ligand is "fully rejected". Smaller $\lambda$ means sharper selectivity. |
 
-where $E_{\text{base}}^{(u)}$ is a baseline energy parameter for unit $u$. *(Note: In the code implementation, an optional weight vector $w_u$ may be used to allow units to specialize in specific dimensions, but this is abstracted mathematically).*
+The EC50 of a heteromeric receptor in the saturating model is:
+
+$$\ln EC_{50}^{(r,\ell)} = \frac{1}{k_\text{sub}} \sum_{u=1}^{k_\text{sub}} \left[ E_{\text{base}}^{(u)} + E_{\text{max}}^{(u)} \cdot \left(1 - e^{-\|\mathbf{v}_u - \mathbf{v}_{\text{obs},\ell}\|^2 / \lambda^2}\right) \right]$$
+
+**Why the saturating form?**
+
+The previous model used a pure quadratic $E_o = E_{\text{base}} + \|\mathbf{v}_u - \mathbf{v}_\ell\|^2$, which grows without bound. A ligand that is far off in chemical space would accumulate an arbitrarily large energy — biophysically wrong, since a non-docking ligand simply contributes ~0 extra cost (the pocket never engages it). The saturating kernel has four key properties:
+
+1. **Correct limiting behavior:** as distance $\to \infty$, the energy saturates at $E_{\text{base}} + E_{\text{max}}$ rather than diverging.
+2. **Local quadratic recovery:** near the optimum ($\|\mathbf{v}_u - \mathbf{v}_\ell\| \ll \lambda$), a Taylor expansion gives $E_o \approx E_{\text{base}} + \frac{E_{\text{max}}}{\lambda^2}\|\mathbf{v}_u - \mathbf{v}_\ell\|^2$, recovering the harmonic approximation. Gradients and local geometry are therefore unchanged.
+3. **Clean parameter meanings:** $E_{\text{base}}$ is unambiguously the EC50 at the optimal ligand; $E_{\text{max}}$ is unambiguously the selectivity ceiling. They enter additively and have distinct physical meanings, avoiding the sloppy-mode degeneracy identified in the JPCB 2017 MWC paper (supplementary, p. S25).
+4. **$\lambda$ decouples breadth from peak depth:** $\lambda$ appears only in the exponent alongside the distance, never multiplying or adding to $E_{\text{base}}$. This is consistent with the Cleland et al. 2021 (odorsampling) convention where the analogous $\sigma$ parameter is normalized out.
+
+**Parameter initialization:**
+
+* $E_{\text{base}}^{(u)}$ is initialized to $\mathbb{E}[\ln c]$, the expected log-concentration averaged over all ligands. This ensures that each receptor's EC50 matches the expected ligand concentration at the start of optimization.
+* $E_{\text{max}}^{(u)}$ is initialized to $10$ (in log-concentration units), placing the saturation ceiling well above any typical concentration in the batch, so the optimizer can freely tune selectivity downward.
 
 *(Crucial Note: Because we operate in the threshold limit defined in Section 2, the receptor activation is strictly governed by $EC_{50}$. This means we can completely bypass the calculation of closed-state energies in the current loss functions, and evaluate the array strictly on the open-state geometry).*
 
