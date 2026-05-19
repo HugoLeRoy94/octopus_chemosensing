@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from scipy.io import loadmat
 from scipy.optimize import curve_fit
 import itertools
-import pandas as pdµ
+import pandas as pd
 import scipy.cluster.hierarchy as sch
 import scipy.spatial.distance as ssd
 
@@ -59,6 +59,7 @@ id_sort = np.argsort(-prob_expr)
 
 plt.plot(range(1,id_sort.shape[0]+1),prob_expr[id_sort])
 plt.xticks(np.arange(nR), CRnames[id_sort],rotation=45)
+plt.ylabel('probability of expression')
 plt.show()
 
 # %%
