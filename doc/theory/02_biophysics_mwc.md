@@ -74,7 +74,33 @@ $$EC_{50}^{(r,\ell)} = \left( \prod_{u=1}^{k_\text{sub}} \tilde{K}_o^{(u,\ell)} 
 
 As a result, a receptor's response to a ligand is fully defined by a single set of parameters: the effective open-state dissociation constants of its individual subunits. This effectively allows us to mathematically bypass modeling the closed states ($K_c$) in downstream algorithms.
 
-### 2.5 Interaction energies
+### 2.5 Smooth Threshold Approximation
+
+Once the response is governed solely by its $EC_{50}$ (section 2.4), the full MWC curve can be replaced by a sigmoid centered at $\ln EC_{50}$ in log-concentration space:
+
+$$p(r \mid c, \ell) = \sigma\!\left(\frac{\ln c - \ln EC_{50}^{(r,\ell)}}{T}\right)$$
+
+The argument $\ln(c / EC_{50})$ is the log-ratio of the applied concentration to the half-activation threshold. Concentrations span orders of magnitude, so this log-ratio is the natural measure of "how far the receptor is from its threshold". The three limiting cases are:
+
+- $c = EC_{50}$: argument $= 0$, $p = 0.5$ — consistent with the definition of $EC_{50}$.
+- $c \gg EC_{50}$: large positive argument, $p \to 1$.
+- $c \ll EC_{50}$: large negative argument, $p \to 0$.
+
+The temperature $T$ controls the sharpness of the transition. At $T \to 0$ the sigmoid collapses to a Heaviside step function (binary activation at exactly $EC_{50}$). At $T = 1$ the response is smooth over roughly one decade of concentration. Large $T$ spreads the transition over many decades, making the receptor sensitive to a wide range of concentrations but in an ambiguous, graded way. In practice $T$ is used as an annealing parameter during optimization: it starts at 1 and is gradually reduced to a target value, keeping gradients alive early in training while recovering a sharp threshold at convergence.
+
+### 2.6 Mixture Activation
+
+In a natural environment a receptor is exposed to a mixture of ligands simultaneously. Assuming all ligands compete for the same binding site (competitive binding), the contribution of ligand $\ell$ at concentration $c_\ell$ is proportional to its individual occupancy ratio $c_\ell / EC_{50}^{(r,\ell)}$. The total drive to activate the receptor is therefore the sum of these ratios:
+
+$$\text{drive}(r,\{c_\ell\}) = \sum_\ell \frac{c_\ell}{EC_{50}^{(r,\ell)}}$$
+
+Half-activation is reached exactly when this sum equals 1, which consistently generalizes the single-ligand rule ($p = 0.5$ at $c = EC_{50}$). The full activation probability in the threshold model becomes:
+
+$$p\!\left(r \,\middle|\, \{c_\ell\}\right) = \sigma\!\left(\frac{\ln \displaystyle\sum_\ell \frac{c_\ell}{EC_{50}^{(r,\ell)}}}{T}\right) = \sigma\!\left(\frac{\displaystyle\ln\!\sum_\ell \exp\!\left(\ln c_\ell - \ln EC_{50}^{(r,\ell)}\right)}{T}\right)$$
+
+The second form rewrites the argument as a logsumexp over log-ratios, which is the numerically stable implementation used in practice. The logarithm is taken before the sigmoid because concentrations span orders of magnitude: what drives activation is not the absolute excess above EC50 but its log-ratio. With this convention the sigmoid is centered at drive = 1 ($\ln(\text{drive}) = 0$), consistent with the single-ligand limit.
+
+### 2.7 Interaction energies
 
 In term of interaction energy, we can write the dissociation constant as :
 $$

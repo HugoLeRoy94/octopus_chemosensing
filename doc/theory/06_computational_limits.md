@@ -35,3 +35,24 @@ If the simulation encounters a CUDA Out Of Memory error, adjust parameters in th
 1. **Reduce Batch Size ($B$)**: Directly impacts almost all tensor allocations.
 2. **Reduce Number of Receptors ($R$)**: Relieves the $\mathcal{O}(R^2)$ penalty bottleneck or the $\mathcal{O}(B \cdot 2^R)$ exact entropy bottleneck.
 3. *Note:* You do not need to reduce the latent space dimension ($D$) or the number of families ($F$), as they contribute negligibly to the training memory footprint.
+
+
+## 6.4 Example
+
+Given the parameters: $B = 2^{20}$, $L = 100$, $U = 26$, $R = 20$, $D = 20$, $K = 2$ (binary). All in fp32.
+
+| Tensor | Shape | Size | Note |
+|---|---|---|---|
+| Ligand coords | $(B, L, D)$ | 8.4 GB | per-sample positions |
+| Concentrations | $(B, L)$ | 4.2 GB | per-sample ligand concentrations |
+| Presence mask | $(B, L)$ | 4.2 GB | which ligands present |
+| **`diff` broadcast** | $(B, L, U, D)$ | **218 GB** | the OOM site |
+| Squared distances $\|v_u - v_\ell\|^2$ | $(B, L, U)$ | 10.9 GB | after $\sum_D$ |
+| $\ln EC_{50}^{(u,\ell)}$ | $(B, L, U)$ | 10.9 GB | per-unit, per-ligand |
+| Receptor energy | $(B, L, R)$ | 8.4 GB | after $\frac{1}{k_\text{sub}}\sum$ over the $k_\text{sub}$ units in each receptor |
+| Logsumexp score | $(B, R)$ | 83.9 MB | after mixture aggregation |
+| Activation $p$ | $(B, R)$ | 83.9 MB | sigmoid output |
+| Soft-bin assignment | $(B, R, K)$ | 167.8 MB | for $K=2$ |
+| Activation grad (backward) | $\sim 2\times$ forward | $\sim 25$ GB | autograd retains for backward |
+
+Total *peak* forward-only memory: roughly $10.9 + 10.9 + 8.4 \approx 30$ GB.  Add the autograd graph (which keeps activations for backward) raising to $\sim 60$–$80$ GB.
