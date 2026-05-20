@@ -319,8 +319,12 @@ and re-loadable from the saved config.
 `test_batch_size="auto"` in `SingleRunConfig` / `RunConfig` to have sizes resolved at init
 time based on array size R and entropy estimator:
 
-- Rényi: `B_train = max(512, 8 · 2^(R/2))`, ensuring ≥30 expected collisions.
-- Shannon (R ≤ 15): same formula, capped so `B · 2^R ≤ 50 M` float32 elements.
+- **Shannon**: `B_train = max(512, 2^R)` — one sample per histogram bin for good coverage.
+  Memory cap: the soft-assignment tensor has shape `(B, 2^R)` float32; budget is
+  `B × 2^R ≤ 2^35` floats (~128 GiB), yielding `B_max = 2^(35−R)` (~10^6 at R = 15 on A100).
+  The cap binds for R ≥ 18, gracefully reducing B back toward the minimum.
+- **Rényi-2**: cost scales as O(B²·R), not O(B·2^R), so a smaller B suffices.
+  `B_train = max(512, 16 · 2^(R/2))`.
 - `test_batch_size = 4 · batch_size` in both cases.
 
 ---
