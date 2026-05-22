@@ -84,6 +84,91 @@ print(top_10_patterns.to_string(index=False))
 
 # %%
 
+# ---------------------------------------------------------
+# 3. Gene expression probability conditioned on total expressed genes
+# ---------------------------------------------------------
+total_expressed = A.sum(axis=0)  # (n_cells,): number of genes on per cell
+k_values = np.arange(nR + 1)
+
+# k_mask[k, c] = 1 iff cell c has exactly k genes expressed
+k_mask = (total_expressed[np.newaxis, :] == k_values[:, np.newaxis])  # (nR+1, n_cells)
+k_counts = k_mask.sum(axis=1)                                         # (nR+1,)
+
+# cond_prob[i, k] = P(gene i expressed | total expressed == k)
+safe_counts = np.where(k_counts > 0, k_counts, np.nan)
+cond_prob = (A @ k_mask.T) / safe_counts[np.newaxis, :]  # (nR, nR+1)
+
+# enrichment[i, k] = P(i | L=k) / (k/N)  — ratio to flat expectation; k=0 → nan
+flat_expectation = np.where(k_values > 0, k_values / nR, np.nan)  # (nR+1,)
+enrichment = cond_prob / flat_expectation[np.newaxis, :]           # (nR, nR+1)
+
+from matplotlib.colors import TwoSlopeNorm,CenteredNorm
+enrich_max = np.nanmax(np.abs(enrichment - 1)) + 1
+norm_enrich = CenteredNorm(vcenter=1,halfrange=2)#TwoSlopeNorm(vcenter=1, vmin=0, vmax=enrich_max)
+
+cmap_enrich = plt.get_cmap('RdBu_r').copy()
+cmap_enrich.set_bad(color='lightgray')
+
+fig, axs = plt.subplots(2, 1, figsize=(14, 8), gridspec_kw={'height_ratios': [1, 3]}, sharex=True)
+
+axs[0].bar(k_values, k_counts, color='steelblue', edgecolor='black')
+axs[0].set_ylabel('Cell count')
+axs[0].set_title('Distribution of total expressed genes per cell')
+
+im = axs[1].imshow(enrichment[id_sort, :], aspect='auto', cmap=cmap_enrich, norm=norm_enrich)
+axs[1].set_yticks(np.arange(nR))
+axs[1].set_yticklabels(CRnames[id_sort], fontsize=7)
+axs[1].set_xticks(k_values)
+axs[1].set_xlabel('Number of expressed genes in cell (k)')
+axs[1].set_ylabel('Gene')
+axs[1].set_title('Enrichment  P(gene | L=k) / (k/N)  — white = flat expectation')
+
+plt.colorbar(im, ax=axs[1], label='Enrichment (1 is no enrichement)')
+plt.tight_layout()
+plt.savefig('P_conditionned.png')
+
+# %%
+
+# E[L | σ_i = 1]: expected total number of expressed genes, given gene i is on
+# Vectorized: sum of total_expressed over cells where gene i is on, divided by count
+gene_on_counts = A.sum(axis=1).astype(float)          # (nR,): number of cells where gene i is on
+mean_L_given_on = (A @ total_expressed) / gene_on_counts  # (nR,)
+
+fig, ax = plt.subplots(figsize=(12, 4))
+ax.bar(np.arange(nR), mean_L_given_on[id_sort], color='steelblue', edgecolor='black')
+ax.axhline(total_expressed.mean(), color='red', linestyle='--', lw=1.5, label=f'global ⟨L⟩ = {total_expressed.mean():.2f}')
+ax.set_xticks(np.arange(nR))
+ax.set_xticklabels(CRnames[id_sort], rotation=45, fontsize=7)
+ax.set_ylabel('E[L | σᵢ = 1]')
+ax.set_title('Expected number of expressed genes conditioned on each gene being on')
+ax.legend()
+plt.tight_layout()
+plt.savefig('E_L_given_on.png')
+plt.show()
+
+# %%
+
+# Line plot of conditional probabilities, one curve per k, colored by k
+valid_k = np.where(k_counts > 0)[0]
+cmap_k = plt.get_cmap('plasma')
+norm_k = plt.Normalize(vmin=valid_k.min(), vmax=valid_k.max())
+
+fig, ax = plt.subplots(figsize=(14, 4))
+for k in range(10):#valid_k:
+    ax.plot(range(nR), cond_prob[id_sort, k], color=cmap_k(norm_k(k)), alpha=0.8, lw=1.5)
+
+sm = plt.cm.ScalarMappable(cmap=cmap_k, norm=norm_k)
+plt.colorbar(sm, ax=ax, label='k (total expressed genes)')
+
+ax.set_xticks(np.arange(nR))
+ax.set_xticklabels(CRnames[id_sort], rotation=45, fontsize=7)
+ax.set_ylabel('P(gene expressed | total expressed = k)')
+ax.set_title('Conditional gene expression probability per k')
+plt.tight_layout()
+plt.show()
+
+# %%
+
 # 1. Pairwise Correlation Matrix (24x24)
 # Values near 0 indicate independence between that pair of genes.
 corr_matrix = np.corrcoef(A)
@@ -261,7 +346,7 @@ im2 = axs[2].imshow(expr_by_sucker_rel[reordered_idx, :], aspect='auto', cmap=cm
 
 axs[2].set_xticks(np.arange(num_suckers))
 axs[2].set_xticklabels(ordered_suckers, fontsize=10)
-axs[2].set_yticks(np.arange(nR))
+axs[2].set_yticks(np.arange(nsR))
 axs[2].set_yticklabels(CRnames[reordered_idx], fontsize=7)
 axs[2].set_xlabel('Sucker IDX')
 axs[2].set_ylabel('Gene')
