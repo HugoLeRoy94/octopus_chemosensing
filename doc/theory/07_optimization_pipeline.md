@@ -291,6 +291,46 @@ family_labels[b, f] = True  iff  any ligand from family f is present in sample b
 ```
 No extra batch sample is drawn; the tensor is computed from the already-sampled `masks`.
 
+**`conditional_entropy_family` / `mutual_information_family` — marginal conditioning:**
+Each family f is treated as an **independent binary variable** F_f ∈ {0,1}.  For
+each f the batch is split into present/absent groups and:
+
+```
+H(A | F_f) = P(f=1)·H(A | f present) + P(f=0)·H(A | f absent)
+```
+
+The function returns `(1/N_f) Σ_f H(A | F_f)`, so `mutual_information_family`
+returns the average pairwise MI: `(1/N_f) Σ_f I(A ; F_f)`.
+
+This avoids the combinatorial explosion of the joint presence pattern (2^N_f
+possible groups), which would require enormous batches to estimate reliably.
+
+**`conditional_entropy_ligand` / `mutual_information_ligand` — marginal conditioning:**
+Each ligand l is treated as an **independent binary variable** L_l ∈ {0,1}.  For
+each l the batch is split into present/absent groups and:
+
+```
+H(A | L_l) = P(l=1)·H(A | l present) + P(l=0)·H(A | l absent)
+```
+
+The function returns `(1/N_l) Σ_l H(A | L_l)`, so `mutual_information_ligand`
+returns the average pairwise MI: `(1/N_l) Σ_l I(A ; L_l)`.
+
+This avoids the combinatorial explosion of the joint mixture pattern (2^N_l
+possible groups), which would require enormous batches to estimate reliably.
+
+**`conditional_entropy_concentration` / `mutual_information_concentration` — per-ligand marginal, quantile binning:**
+Each ligand l is treated independently. Samples are sorted by c_l and split into
+`n_c_bins` equal-quantile bins. The conditional entropy for ligand l is:
+
+```
+H(A | C_l) ≈ Σ_k (n_k/B) · H(A | C_l ∈ bin_k)
+```
+
+The function returns `(1/N_l) Σ_l H(A | C_l)`, so `mutual_information_concentration`
+returns `(1/N_l) Σ_l I(A ; C_l)` — the mean pairwise MI between the receptor array
+and each individual ligand's concentration.
+
 **Miller-Madow correction:** the plug-in entropy estimator is biased downward for finite
 batch sizes. The Miller-Madow correction adds `(K_hat − 1) / (2·B·ln2)` where K_hat is
 the number of distinct observed codewords, partially correcting this bias.
