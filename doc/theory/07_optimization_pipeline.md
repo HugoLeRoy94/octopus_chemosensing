@@ -115,15 +115,55 @@ Two kernel choices (§03):
 
 ## Stage 2 — Batch Sampling (`environment.py::LigandEnvironment.sample_batch`)
 
-Each training step generates a fresh batch of `batch_size` sensory "sniffs".
-Steps 1–3 are shared between the two model modes; step 4 diverges.
+`sample_batch(batch_size, receptor_indices=None)` is composed of
+three private helpers so each concern is testable in isolation:
 
-1. **Mixture mask** — independent Bernoulli draws per ligand: `M_ℓ ~ Bernoulli(p_presence_ℓ)`.
-2. **Concentrations** — sampled from `ConcentrationModel`, then zero-masked for absent ligands.
-3. **Observation noise** — `v_obs,ℓ = v_ℓ + N(0, σ_noise)` simulates docking variance.
-4. **Distances & energies** — the identity trick avoids allocating an (B, L, *, D) tensor:
+| Helper | Returns | Notes |
+|---|---|---|
+| `_sample_masks(B)` | `(B, L)` float mask | Bernoulli or Gaussian-copula presence draw (see below) |
+| `_sample_noisy_ligands(B)` | `(B, L, D)` | fixed ligand coords + i.i.d. `N(0, σ_noise)` |
+| `_compute_energies(v_ligands, receptor_indices)` | `(B,L,U)` or `(B,L,R,k)` | distance trick + kernel; classic or interface branch |
 
-```python
+### 2.1 Presence sampling — Gaussian-copula mode
+
+Controlled by `rho_block` and `n_presence_blocks` in `SingleRunConfig`/`RunConfig`.
+
+**Default (`rho_block = 0`):** `M[b,ℓ] ~ Bernoulli(p_ℓ)` independently — the
+original code path, unchanged.
+
+**Copula mode (`rho_block > 0`):** implements a block-diagonal Gaussian copula
+following del Castillo et al., PNAS 2026, §1.1.
+
+1. **Block partition** — `n_ligands` ligands are divided into `n_presence_blocks`
+   source blocks at environment construction. Block membership is assigned by a
+   seeded random permutation with seed `n_ligands × 131071 + n_presence_blocks`
+   (deterministic from those two values alone), independently of `ligand_family_assignments`.
+   Stored as buffer `presence_block_id (L,)`.
+
+2. **Cholesky factor (once at init)** — Build the `L × L` block-diagonal correlation
+   matrix `Σ`: diagonal 1, off-diagonal `rho_block` within a block, 0 across blocks.
+   After a small jitter (`Σ += 1e-6 I`) for numerical stability, factorize:
+   `L = cholesky(Σ)` (lower-triangular; `Σ = L @ L.T`). Stored as buffer `copula_chol`.
+   Precompute `τ_ℓ = Φ⁻¹(p_ℓ)` (quantile thresholds) and store as `copula_tau (L,)`.
+
+3. **Per-batch draw** —
+   ```
+   eps ~ N(0, I)   shape (B, L)
+   z   = eps @ L.T           # row-covariance: cov(z_row) = L L.T = Σ
+   M   = (z < τ).float()     # P(M[b,ℓ]=1) = Φ(τ_ℓ) = p_ℓ  exactly
+   ```
+   Marginals are preserved by the monotone threshold; block correlation survives it
+   (realised binary correlation is smaller than `rho_block` by the tetrachoric factor —
+   this is expected, not a bug).
+
+**Block-shared concentration mean** (`block_shared_conc_mean = True`, only when
+`rho_block > 0`): within each source block all ligands inherit the same concentration
+mean (the average of their individually configured means). Per-sniff concentrations
+still draw independently around that shared mean. This matches the turbulent-transport
+assumption of del Castillo §1.1: co-occurrence survives but concentration ratios do not.
+
+**Energy computation** — the identity trick avoids allocating an `(B, L, *, D)` tensor:
+```
 dist_sq = ||a||² + ||b||² - 2 <a, b>
 ```
 
@@ -240,17 +280,34 @@ for epoch in range(epochs):
 and decreases linearly to the configured `temperature`. A high T keeps the sigmoid soft
 early in training (smooth gradients); a low T sharpens to binary decisions later.
 
-**Warm-starting** (`SweepRunner`): the environment from step N is passed to step N+1.
-`warm_start_axis` in `RunConfig` controls which axis (or axes) forms the trajectory:
+**Warm-starting** (`SweepRunner`): `warm_start_axis` in `RunConfig` controls which sweep
+axis forms the sequential *trajectory* within each sample.  At each step after the first,
+`SweepRunner.execute` applies a **3-way heuristic** to choose the starting environment:
 
-- **Single string** (e.g. `"n_genes"`): existing behaviour — sorted ascending, environment
-  warm-started via `clone_with_extra_units` when `n_genes` grows.
-- **List of strings** (e.g. `["n_genes", "n_receptors"]`): the listed axes are **zipped**
-  together rather than forming a Cartesian product, sorted by the first axis.  Use this to
-  grow n_genes and n_receptors jointly (the heteromer case).
+| Condition | Warm-start action |
+|---|---|
+| `prev.n_genes != curr.n_genes` | **Case 1 — gene growth:** pass `prev_env` forward; `_initialize` calls `clone_with_extra_units` to expand the gene pool. |
+| `prev.n_genes == curr.n_genes` and a *square baseline* is cached | **Case 2 — receptor fan-out:** branch from the cached env where `n_genes == n_receptors` (the "square" step).  Every larger n_receptors value starts from the *same* root, not from the immediately preceding n_receptors result. |
+| Neither condition met | **Case 3 — cold start:** `UserWarning` emitted; environment built from scratch. |
 
-`_initialize` always builds `receptor_indices` from `self.config.receptor_indices`, which
-is auto-generated in `SingleRunConfig.__post_init__` from `(n_genes, n_receptors,
+The **square baseline** is automatically identified and cached whenever a step in the
+trajectory satisfies `n_genes == n_receptors` (or `n_receptors is None`, i.e. the homomer
+default where n_receptors equals n_genes by construction).
+
+`"n_genes"` and `"n_receptors"` are **mutually exclusive** in `warm_start_axis`;
+`SweepRunner.execute` raises `ValueError` if both are requested.
+
+**Typical usage:**
+```python
+# Receptor fan-out sweep — each n_receptors > 5 branches from the (5, 5) baseline.
+RunConfig(n_genes=5, n_receptors=list(range(5, 16)), warm_start_axis="n_receptors", ...)
+
+# Gene-growth sweep — classic chain warm-start.
+RunConfig(n_genes=list(range(5, 16)), n_receptors=10, warm_start_axis="n_genes", ...)
+```
+
+`_initialize` always builds `receptor_indices` fresh from `self.config.receptor_indices`,
+which is auto-generated in `SingleRunConfig.__post_init__` from `(n_genes, n_receptors,
 receptor_sampling_strategy, receptor_sampling_seed)` when `receptor_indices is None`.
 The LR is damped 10× on warm-start to preserve learned representations.
 
@@ -262,6 +319,10 @@ The LR is damped 10× on warm-start to preserve learned representations.
 ## Stage 6 — Evaluation & Metrics (`run.py::SimulationRunner._eval_stats`)
 
 Evaluation runs under `torch.no_grad()` with `test_batch_size` samples.
+`_eval_stats` draws a single **mixture batch** (natural Bernoulli masks) before the
+measurement loop.  All metrics — including conditional-entropy and MI measurements —
+operate on this same batch.
+
 When `eval_chunk_size < test_batch_size`, soft metrics use one chunk and hard codeword
 metrics are accumulated across all chunks (avoiding CUDA OOM on large eval budgets).
 
@@ -273,12 +334,14 @@ Available metrics (add to `measurement_fns` in config):
 | `codeword_entropy` | `analysis_helper.codeword_entropy` | Hard plug-in + Miller-Madow entropy of binary codewords |
 | `mean_receptor_distance` | `analysis_helper.mean_receptor_distance` | Average pairwise latent-space distance between receptors |
 | `receptor_distances` | `analysis_helper.receptor_distances` | Full (R, R) pairwise distance matrix |
-| `conditional_entropy_ligand` | `analysis_helper.conditional_entropy_ligand` | H(A \| M) — conditioned on exact ligand identity |
-| `mutual_information_ligand` | `analysis_helper.mutual_information_ligand` | I(A ; M) — identity channel |
-| `conditional_entropy_concentration` | `analysis_helper.conditional_entropy_concentration` | H(A \| C) |
-| `mutual_information_concentration` | `analysis_helper.mutual_information_concentration` | I(A ; C) — concentration channel |
-| `conditional_entropy_family` | `analysis_helper.conditional_entropy_family` | H(A \| F) — conditioned on family presence mask |
-| `mutual_information_family` | `analysis_helper.mutual_information_family` | I(A ; F) — family channel (coarser than identity) |
+| `conditional_entropy_ligand` | `analysis_helper.conditional_entropy_ligand` | (1/N_l) Σ H(A \| L_l) |
+| `mutual_information_ligand` | `analysis_helper.mutual_information_ligand` | (1/N_l) Σ I(A ; L_l) |
+| `conditional_entropy_concentration` | `analysis_helper.conditional_entropy_concentration` | (1/N_l) Σ H(A \| C_l) |
+| `mutual_information_concentration` | `analysis_helper.mutual_information_concentration` | (1/N_l) Σ I(A ; C_l) |
+| `conditional_entropy_family` | `analysis_helper.conditional_entropy_family` | (1/N_f) Σ H(A \| F_f) — latent-space families |
+| `mutual_information_family` | `analysis_helper.mutual_information_family` | (1/N_f) Σ I(A ; F_f) |
+| `conditional_entropy_block` | `analysis_helper.conditional_entropy_block` | (1/N_b) Σ H(A \| B_b) — copula source blocks |
+| `mutual_information_block` | `analysis_helper.mutual_information_block` | (1/N_b) Σ I(A ; B_b) |
 | `rank_ordered_distances` | `analysis_helper.rank_ordered_distances` | Rank-ordered energy gap from preferred ligand |
 | `mean_specialization_index` | `analysis_helper.mean_specialization_index` | S_r = (A_max − A_bg)/(A_max + A_bg) |
 | `receptor_conditioned_entropy` | `analysis_helper.receptor_conditioned_entropy` | H(M \| a_r > 0.5) — mixture uncertainty when receptor fires |
@@ -290,6 +353,20 @@ Available metrics (add to `measurement_fns` in config):
 family_labels[b, f] = True  iff  any ligand from family f is present in sample b
 ```
 No extra batch sample is drawn; the tensor is computed from the already-sampled `masks`.
+
+**Block labels:** `conditional_entropy_block` and `mutual_information_block` require
+`block_labels: (B, n_presence_blocks)` bool, derived lazily in `_eval_stats` from
+`env.presence_block_id` and `mixture_masks`:
+```python
+block_labels[b, k] = True  iff  any ligand from source block k is present in sample b
+```
+Computed identically to `family_labels` but via `env.presence_block_id`.  Since the
+block partition is orthogonal to the family partition by construction, comparing
+`mutual_information_block` with `mutual_information_family` disentangles the receptor's
+sensitivity to *source co-occurrence* (blocks) from its sensitivity to *chemical
+similarity* (families).  When `rho_block = 0` all blocks fire independently at rate
+`1 − (1−p)^m` (at least one ligand present), so the metric is still well-defined
+even without copula correlation.
 
 **`conditional_entropy_family` / `mutual_information_family` — marginal conditioning:**
 Each family f is treated as an **independent binary variable** F_f ∈ {0,1}.  For
@@ -365,6 +442,13 @@ time based on array size R and entropy estimator:
   The cap binds for R ≥ 18, gracefully reducing B back toward the minimum.
 - **Rényi-2**: cost scales as O(B²·R), not O(B·2^R), so a smaller B suffices.
   `B_train = max(512, 16 · 2^(R/2))`.
+- **Physics bottleneck cap (both entropy types)**: the dominant tensor in `physics.py` is
+  `gathered_flat` of shape `(B, n_ligands, R·k_sub)` float32. At resolve time, 80% of free
+  GPU memory is queried via `torch.cuda.mem_get_info()` and a 4× safety factor is applied
+  for gradients and intermediate tensors: `B_physics = free_mem × 0.8 / (4 · n_ligands · R · k_sub · 4)`.
+  `B_train` is capped to `min(B_train, B_physics)` for both entropy types. This prevents OOM
+  at large R (e.g. R = 30 homomers with n_ligands = 100 and k_sub = 5 would otherwise request
+  ~31 GiB for `gathered_flat` alone).
 - `test_batch_size = 4 · batch_size` in both cases.
 
 ---
