@@ -120,47 +120,77 @@ three private helpers so each concern is testable in isolation:
 
 | Helper | Returns | Notes |
 |---|---|---|
-| `_sample_masks(B)` | `(B, L)` float mask | Bernoulli or Gaussian-copula presence draw (see below) |
-| `_sample_noisy_ligands(B)` | `(B, L, D)` | fixed ligand coords + i.i.d. `N(0, σ_noise)` |
-| `_compute_energies(v_ligands, receptor_indices)` | `(B,L,U)` or `(B,L,R,k)` | distance trick + kernel; classic or interface branch |
+| `_sample_masks(B)` | `((B,L) mask, (B,s_upper) sparse_idx)` | hierarchical draw; `sparse_idx` carries selected ligand indices |
+| `_sample_noisy_ligands(B, sparse_idx)` | `(B, s_upper, D)` | noisy coords for present ligands only; dummy slots zeroed |
+| `_compute_energies(v_ligands, receptor_indices)` | `(B,s_upper,U)` or `(B,s_upper,R,k)` | distance trick + kernel; second dim is now s_upper, not L |
 
-### 2.1 Presence sampling — Gaussian-copula mode
+`s_upper` is a static bound computed once in `__init__`:
+`s_upper = min(L, (⌊μ_src + 4√μ_src⌋ + 1) × max_m)` covering the ~99.99th percentile of
+Poisson(mu_sources) × max_m without a per-batch GPU→CPU sync.
+For the default config (mu_sources=4, max_m=10): s_upper = 130 vs L = 2000, a **15× reduction**
+in the dominant einsum and its backward.  Padding slots carry global index L with concentration 0,
+contributing exp(−27) ≈ 0 to the logsumexp in physics — numerically invisible.
 
-Controlled by `rho_block` and `n_presence_blocks` in `SingleRunConfig`/`RunConfig`.
+### 2.1 Presence sampling — hierarchical source→ligand model
 
-**Default (`rho_block = 0`):** `M[b,ℓ] ~ Bernoulli(p_ℓ)` independently — the
-original code path, unchanged.
+Controlled by `mu_sources`, `mu_ligands_per_source`, and `n_presence_blocks` in
+`SingleRunConfig`/`RunConfig`.
 
-**Copula mode (`rho_block > 0`):** implements a block-diagonal Gaussian copula
-following del Castillo et al., PNAS 2026, §1.1.
+**Block partition** — `n_ligands` ligands are divided into `K = n_presence_blocks`
+source blocks at environment construction.  Block membership is assigned by a seeded
+random permutation with seed `n_ligands × 131071 + n_presence_blocks` (deterministic
+from those two values alone), independently of `ligand_family_assignments`.
+Stored as buffer `presence_block_id (L,)`.  Helper buffers `_block_members (K, max_m)`,
+`_block_valid (K, max_m)`, and `_block_sizes (K,)` index into the partition.
+Three additional precomputed buffers enable fully vectorized mask sampling:
+`_safe_block_members (K, max_m)` — invalid slots redirected to dummy index L;
+`_log_pmf_source (K,)` — normalized ZTP log-PMF for the n_src draw;
+`_log_pmf_ligand (K, max_m)` — per-block normalized ZTP log-PMF for n_lig draws.
 
-1. **Block partition** — `n_ligands` ligands are divided into `n_presence_blocks`
-   source blocks at environment construction. Block membership is assigned by a
-   seeded random permutation with seed `n_ligands × 131071 + n_presence_blocks`
-   (deterministic from those two values alone), independently of `ligand_family_assignments`.
-   Stored as buffer `presence_block_id (L,)`.
+**Per-batch draw** (implemented in `_sample_masks`) —
 
-2. **Cholesky factor (once at init)** — Build the `L × L` block-diagonal correlation
-   matrix `Σ`: diagonal 1, off-diagonal `rho_block` within a block, 0 across blocks.
-   After a small jitter (`Σ += 1e-6 I`) for numerical stability, factorize:
-   `L = cholesky(Σ)` (lower-triangular; `Σ = L @ L.T`). Stored as buffer `copula_chol`.
-   Precompute `τ_ℓ = Φ⁻¹(p_ℓ)` (quantile thresholds) and store as `copula_tau (L,)`.
+1. **Active sources.** Draw `n_src ~ ZTP(mu_sources, K)` (zero-truncated Poisson
+   with rate `mu_sources`, support `[1, K]`). Select `n_src` distinct source blocks
+   uniformly without replacement via Gumbel-top-k.
 
-3. **Per-batch draw** —
-   ```
-   eps ~ N(0, I)   shape (B, L)
-   z   = eps @ L.T           # row-covariance: cov(z_row) = L L.T = Σ
-   M   = (z < τ).float()     # P(M[b,ℓ]=1) = Φ(τ_ℓ) = p_ℓ  exactly
-   ```
-   Marginals are preserved by the monotone threshold; block correlation survives it
-   (realised binary correlation is smaller than `rho_block` by the tetrachoric factor —
-   this is expected, not a bug).
+2. **Ligands per active source.** For each active block `k` (size `m_k`), draw
+   `n_lig ~ ZTP(mu_ligands_per_source, m_k)`. Select `n_lig` distinct ligands within
+   block `k` uniformly without replacement via Gumbel-top-k.
 
-**Block-shared concentration mean** (`block_shared_conc_mean = True`, only when
-`rho_block > 0`): within each source block all ligands inherit the same concentration
-mean (the average of their individually configured means). Per-sniff concentrations
-still draw independently around that shared mean. This matches the turbulent-transport
-assumption of del Castillo §1.1: co-occurrence survives but concentration ratios do not.
+3. Set `M[b, picked] = 1`, all else 0.
+
+Zero-truncated Poisson sampling on `[1, n_max]`: unnormalized log-PMF
+`s·ln(λ) − ln(s!)` for `s = 1..n_max` is normalized and stored as a buffer at init.
+At sample time the **Gumbel-max trick** is used — `argmax(log_pmf + Gumbel(0,1))` gives
+an exact categorical draw without `torch.multinomial`, enabling full vectorization across
+all K blocks simultaneously with no Python loop and no GPU→CPU synchronization.
+
+Every row has `S ≥ 1` by construction (step 1 forces at least one active source, step
+2 forces at least one ligand per source).  No rejection loop is needed; `sample_batch`
+asserts `masks.sum(-1).min() >= 1` as a safeguard.
+
+**Knobs:**
+
+| Parameter | Effect at small values | Effect at large values |
+|---|---|---|
+| `mu_sources` | ~1 active source (sparse source mixture) | many sources active |
+| `mu_ligands_per_source` | ~1 ligand per source (pure singleton → pure source) | many ligands per source |
+
+Corner cases: `K = 1` ("one source, mu_ligands_per_source controls mixture size");
+`K = n_ligands` (each ligand its own source, `mu_ligands_per_source` then forced to 1).
+
+**Block-shared concentration mean** (`block_shared_conc_mean = True`, gated on
+`n_presence_blocks > 1`): within each source block all ligands inherit the same
+concentration mean (the average of their individually configured means).  Per-sniff
+concentrations still draw independently around that shared mean.  This matches the
+turbulent-transport assumption: co-occurrence survives but concentration ratios do not.
+
+### 2.2 Sampling guarantee
+
+The hierarchical sampler guarantees `S = sum(M, dim=-1) >= 1` for every row by
+construction (step 1 always selects ≥ 1 source; step 2 always selects ≥ 1 ligand
+per source).  There is no empty-mixture rejection loop.  `sample_batch` checks this
+invariant with a single `assert masks.sum(-1).min() >= 1`.
 
 **Energy computation** — the identity trick avoids allocating an `(B, L, *, D)` tensor:
 ```
@@ -280,30 +310,23 @@ for epoch in range(epochs):
 and decreases linearly to the configured `temperature`. A high T keeps the sigmoid soft
 early in training (smooth gradients); a low T sharpens to binary decisions later.
 
-**Warm-starting** (`SweepRunner`): `warm_start_axis` in `RunConfig` controls which sweep
-axis forms the sequential *trajectory* within each sample.  At each step after the first,
-`SweepRunner.execute` applies a **3-way heuristic** to choose the starting environment:
+**Warm-starting** (`SweepRunner`): `warm_start: bool` in `RunConfig` controls whether
+chain warm-starting is applied along the trajectory.  At each step after the first,
+`SweepRunner.execute` applies a **2-way rule**:
 
-| Condition | Warm-start action |
+| Condition | Action |
 |---|---|
-| `prev.n_genes != curr.n_genes` | **Case 1 — gene growth:** pass `prev_env` forward; `_initialize` calls `clone_with_extra_units` to expand the gene pool. |
-| `prev.n_genes == curr.n_genes` and a *square baseline* is cached | **Case 2 — receptor fan-out:** branch from the cached env where `n_genes == n_receptors` (the "square" step).  Every larger n_receptors value starts from the *same* root, not from the immediately preceding n_receptors result. |
-| Neither condition met | **Case 3 — cold start:** `UserWarning` emitted; environment built from scratch. |
-
-The **square baseline** is automatically identified and cached whenever a step in the
-trajectory satisfies `n_genes == n_receptors` (or `n_receptors is None`, i.e. the homomer
-default where n_receptors equals n_genes by construction).
-
-`"n_genes"` and `"n_receptors"` are **mutually exclusive** in `warm_start_axis`;
-`SweepRunner.execute` raises `ValueError` if both are requested.
+| `warm_start=False` or first step | **Cold start:** environment built from scratch. |
+| `prev.n_genes != curr.n_genes` | **Chain warm-start:** pass `prev_env` forward; `_initialize` calls `clone_with_extra_units` to expand the gene pool. LR is damped 10×. |
+| `prev.n_genes == curr.n_genes` | **Cold start:** no warm-start applied. |
 
 **Typical usage:**
 ```python
-# Receptor fan-out sweep — each n_receptors > 5 branches from the (5, 5) baseline.
-RunConfig(n_genes=5, n_receptors=list(range(5, 16)), warm_start_axis="n_receptors", ...)
+# Gene-growth sweep — chain warm-start at each n_genes step.
+RunConfig(n_genes=[3,4,5,6,7,8], conc_mean=(...), warm_start=True, ...)
 
-# Gene-growth sweep — classic chain warm-start.
-RunConfig(n_genes=list(range(5, 16)), n_receptors=10, warm_start_axis="n_genes", ...)
+# Fixed n_genes, vary other parameters — always cold.
+RunConfig(n_genes=5, entropy=["renyi","shannon"], conc_mean=(...), warm_start=False, ...)
 ```
 
 `_initialize` always builds `receptor_indices` fresh from `self.config.receptor_indices`,
@@ -340,7 +363,7 @@ Available metrics (add to `measurement_fns` in config):
 | `mutual_information_concentration` | `analysis_helper.mutual_information_concentration` | (1/N_l) Σ I(A ; C_l) |
 | `conditional_entropy_family` | `analysis_helper.conditional_entropy_family` | (1/N_f) Σ H(A \| F_f) — latent-space families |
 | `mutual_information_family` | `analysis_helper.mutual_information_family` | (1/N_f) Σ I(A ; F_f) |
-| `conditional_entropy_block` | `analysis_helper.conditional_entropy_block` | (1/N_b) Σ H(A \| B_b) — copula source blocks |
+| `conditional_entropy_block` | `analysis_helper.conditional_entropy_block` | (1/N_b) Σ H(A \| B_b) — source blocks |
 | `mutual_information_block` | `analysis_helper.mutual_information_block` | (1/N_b) Σ I(A ; B_b) |
 | `rank_ordered_distances` | `analysis_helper.rank_ordered_distances` | Rank-ordered energy gap from preferred ligand |
 | `mean_specialization_index` | `analysis_helper.mean_specialization_index` | S_r = (A_max − A_bg)/(A_max + A_bg) |
@@ -364,9 +387,8 @@ Computed identically to `family_labels` but via `env.presence_block_id`.  Since 
 block partition is orthogonal to the family partition by construction, comparing
 `mutual_information_block` with `mutual_information_family` disentangles the receptor's
 sensitivity to *source co-occurrence* (blocks) from its sensitivity to *chemical
-similarity* (families).  When `rho_block = 0` all blocks fire independently at rate
-`1 − (1−p)^m` (at least one ligand present), so the metric is still well-defined
-even without copula correlation.
+similarity* (families).  With the hierarchical sampler, `block_labels[b, k] = True`
+exactly when source block `k` was drawn as an active source in sniff `b`.
 
 **`conditional_entropy_family` / `mutual_information_family` — marginal conditioning:**
 Each family f is treated as an **independent binary variable** F_f ∈ {0,1}.  For
@@ -416,21 +438,47 @@ the number of distinct observed codewords, partially correcting this bias.
 
 ## Sweep Architecture (`config.py::RunConfig + run.py::SweepRunner`)
 
-`RunConfig` accepts `Union[T, List[T]]` for any parameter. List-valued fields
-become sweep axes; a Cartesian product is taken over all independent axes.
-The warm-start axis (or axes) is extracted and run sequentially within each trajectory.
+`RunConfig` accepts scalar or list values for every parameter field.
+List-valued fields are **zip-iterated** (not crossed): all axis lists must share
+the same length L, producing exactly L steps in a single trajectory.
 
-Per-trajectory concentration draws (`conc_mean`, `conc_std`, `p_presence`) are
-deterministically sampled from a seeded NumPy RNG, so sweeps are fully reproducible
-and re-loadable from the saved config.
+Fields whose values are inherently arrays (`conc_mean`, `conc_std`,
+`kernel_params`, `measurement_fns`) use a `tuple` when fixed and a `List[tuple]`
+when iterated, so `isinstance(val, list)` uniformly identifies every axis without
+special-casing.
 
-**New fields for heteromer sweeps:**
+Concentration parameters are supplied **directly** as tuples in the config (no
+range-based RNG sampling).  To obtain multiple statistically independent runs,
+supply multiple entries in the list or run the sweep script multiple times.
+
+**`warm_start: bool` (replaces `warm_start_axis`):**  
+When `True`, steps are sorted by `n_genes` ascending and a chain warm-start is
+applied whenever `n_genes` grows between consecutive steps (previous trained
+environment forwarded via `prev_env`).  All other transitions (n_genes unchanged,
+n_receptors changing) start cold.  When `False`, steps run in natural order and
+every step starts cold.
+
+**Folder layout** (written by `IO.py::_run_rel_path`):
+```
+{sweep_root}/{scalar_axis_1}_{val}/.../run_{YYYYMMDD_HHMMSS}/
+```
+Only scalar-valued axes appear as directory components (array-typed axes like
+`conc_mean` are recovered from `config.json`).  The timestamp leaf guarantees
+uniqueness when identical parameters are run more than once.  The execution
+timestamp is also stored as `run_timestamp` in `config.json`.
+
+**`SweepLoader.iter_run_dirs()`** crawls the sweep root for `config.json` files
+rather than regenerating paths from the sweep config, making it robust to
+interrupted or partial sweeps.
+
+**Fields for heteromer sweeps:**
 
 | Field | Type | Meaning |
 |---|---|---|
 | `n_receptors` | `Optional[int]` | Target receptor count; triggers `build_heteromer_array` in `__post_init__` |
 | `receptor_sampling_strategy` | `str` | `"cascading"` (default) or `"uniform_random"` |
 | `receptor_sampling_seed` | `Optional[int]` | RNG seed; same args → same receptor set |
+| `use_interface_model` | `bool` | Forwarded to `build_heteromer_array`; routes to ordered-ring variants when `True` |
 
 **Batch-size auto-scaling** (`run.py::resolve_batch_sizes`): pass `batch_size="auto"` and/or
 `test_batch_size="auto"` in `SingleRunConfig` / `RunConfig` to have sizes resolved at init
@@ -453,24 +501,107 @@ time based on array size R and entropy estimator:
 
 ---
 
+## SQLite Run Index (`src/db.py`)
+
+`runs.db` is a derived lookup table kept in `base_folder`.  It does **not** change
+the folder structure or data files — `config.json` remains ground truth.  Delete
+and rebuild at any time with `backfill`.
+
+### Schema
+
+| Column | Type | Source |
+|---|---|---|
+| `path` | TEXT PK | Relative path from `base_folder` |
+| `sweep_name` | TEXT | Prefix of sweep dir name (before `_YYYYMMDD_HHMMSS`) |
+| `sweep_date` | TEXT | Timestamp regex `(\d{8}_\d{6})` from sweep dir |
+| `status` | TEXT | `complete` / `partial` / `missing` |
+| `run_mtime` | REAL | `os.path.getmtime` of run dir |
+| `git_hash` | TEXT | Short HEAD hash at index time, or NULL |
+| `created` / `modified` | TEXT | ISO timestamps (UTC); `created` is immutable after first insert |
+| *(scalar config fields)* | varies | All scalar `SingleRunConfig` fields; list-valued fields (`conc_mean`, `conc_std`, `kernel_params`, `measurement_fns`, `receptor_indices`) are skipped → NULL |
+| `{metric}_mean` | REAL | Mean of each `test_results.json` metric list; columns added dynamically via `ALTER TABLE` when new metrics appear |
+
+UNIQUE key on `path`; `INSERT OR REPLACE` (UPSERT) makes re-indexing idempotent.
+WAL mode + exponential-backoff retry handle parallel sweeps writing simultaneously.
+
+### Automatic hook
+
+`SweepRunner.execute()` calls `db.add_run(run_dir, db_path)` after every
+`test_results.json` is written.  The call is wrapped in a bare `try/except` — a DB
+failure never aborts a sweep.  The DB is not created automatically; run `init` once
+to activate indexing.
+
+### SweepLoader DB integration
+
+`SweepLoader` auto-detects `runs.db` by looking one directory above `sweep_root`
+(i.e. at `base_folder/runs.db`).  When present it is used transparently:
+
+| Method | DB present | DB absent |
+|---|---|---|
+| `load_all_test_results()` | single SQL query (`GLOB sweep_subdir/*`) | disk crawl (config.json + test_results.json) |
+| `find_run_dir(**filters)` | SQL `WHERE` on scalar config cols + GLOB | `iter_run_dirs()` + `getattr` filter |
+| `iter_run_dirs()` | always disk crawl (needs full config) | disk crawl |
+| `load_all_histories()` | always disk crawl (stats.csv not in DB) | disk crawl |
+
+`_mean`-suffixed metric columns from the DB are renamed to bare metric names
+(e.g. `full_array_entropy_mean` → `full_array_entropy`) so the DataFrame
+schema matches the disk-crawl convention and analysis code is unchanged.
+
+### CLI
+
+```
+python -m src.db init       runs.db
+python -m src.db backfill   runs.db
+python -m src.db add-run    runs.db  path/to/run_dir
+python -m src.db sync       runs.db
+python -m src.db reconcile  runs.db  [--dry-run]
+python -m src.db delete     runs.db  relative/path  [--dry-run]
+python -m src.db move       runs.db  old/path  new/path
+python -m src.db alter      runs.db  add-col    col_name  TYPE
+python -m src.db alter      runs.db  remove-col col_name  [--dry-run]
+python -m src.db query      runs.db  [--where EXPR] [--cols c1,c2] [--limit N]
+```
+
+`--dry-run` is supported on `reconcile`, `delete`, and `alter remove-col`.
+
+---
+
 ## Receptor Sampling Strategies (`geometry.py`)
 
 ### Unified entry-point: `build_heteromer_array`
 
 ```python
-build_heteromer_array(n_genes, k_sub, R_target, strategy="uniform_random", seed=None)
+build_heteromer_array(n_genes, k_sub, R_target, strategy="uniform_random", seed=None,
+                      use_interface_model=False)
 ```
 
 Returns `(R_target, k_sub)` long tensor. Called automatically from
-`SingleRunConfig.__post_init__` when `n_receptors` is set and `receptor_indices` is None.
+`SingleRunConfig.__post_init__` when `n_receptors` is set and `receptor_indices` is None,
+with `use_interface_model` forwarded from the config.
 
-| `strategy` | Description |
-|---|---|
-| `"cascading"` | Homomers first, then 2-mers, … until quota reached.  Biologically motivated — simpler complexes fold more reliably. |
-| `"uniform_random"` | Reservoir-sampling from the full `combinations_with_replacement` pool (O(R_target) memory; never materialises the full pool). |
+| `strategy` | Classic model | Interface model |
+|---|---|---|
+| `"cascading"` | `generate_cascading_receptors` — homomers first, then 2-mers, … | `generate_cascading_ordered_receptors` — same tier order, cyclic pool |
+| `"uniform_random"` | Reservoir-sampling from `combinations_with_replacement` | `generate_ordered_receptor_indices` — sample from canonical cyclic pool |
 
 When `R_target` exceeds the pool size the full pool is returned with a warning.
-Determinism contract: same `(n_genes, k_sub, R_target, strategy, seed)` → identical tensor.
+Determinism contract: same `(n_genes, k_sub, R_target, strategy, seed, use_interface_model)` → identical tensor.
+
+### Pool size: `count_receptor_combinations`
+
+```python
+count_receptor_combinations(n_genes, k_sub, use_interface_model=False) -> int
+```
+
+Returns the number of distinct receptor types without enumerating them.
+
+- **Classic model** (unordered multisets): $\binom{n\_genes + k\_sub - 1}{k\_sub}$ (stars and bars).
+- **Interface model** (cyclic arrangements, rotation-identified, reflection-distinct):
+  Burnside's lemma for the cyclic group $C_{k_{sub}}$:
+
+$$\frac{1}{k_{sub}} \sum_{d \mid k_{sub}} \varphi(d)\, n_{genes}^{k_{sub}/d}$$
+
+where $\varphi$ is Euler's totient function. Example: $n_{genes}=3,\, k_{sub}=5$ gives 21 (classic) vs 51 (interface).
 
 ### Classic model — unordered compositions (lower-level functions)
 
@@ -493,9 +624,9 @@ Canonical representative: the **lexicographically minimum cyclic rotation** of t
 
 | Function | Strategy |
 |---|---|
-| `generate_ordered_receptor_indices` | Random sample from all canonical cyclic arrangements |
-| `generate_targeted_ordered_receptors` | Explicit counts per complexity level |
-| `generate_cascading_ordered_receptors` | Fill quota by complexity: homomers first |
+| `generate_ordered_receptor_indices` | Random sample from all canonical cyclic arrangements; accepts optional `seed` |
+| `generate_targeted_ordered_receptors` | Explicit counts per complexity level; accepts optional `seed` |
+| `generate_cascading_ordered_receptors` | Fill quota by complexity: homomers first; accepts optional `seed` |
 
 **Cost note:** enumeration generates at most `|combos| × k_sub!` candidate permutations,
 then deduplicates via canonical form.  For n_genes=26, k_sub=5 this is ~17 M operations

@@ -60,6 +60,8 @@ id_sort = np.argsort(-prob_expr)
 plt.plot(range(1,id_sort.shape[0]+1),prob_expr[id_sort])
 plt.xticks(np.arange(nR), CRnames[id_sort],rotation=45)
 plt.ylabel('probability of expression')
+plt.yscale('log')
+plt.save#fig('individual_genes_expression.png')
 plt.show()
 
 # %%
@@ -251,7 +253,7 @@ ax[2].axvline([13.],color='green')
 ax[2].axvline([22.-0.1],color='green')
 ax[2].axvline([22.+0.1],color='red')
 ax[2].axvline([24.],color='red')
-
+plt.savefig('correlation_matrix.png')
 plt.show()
 # %%
 
