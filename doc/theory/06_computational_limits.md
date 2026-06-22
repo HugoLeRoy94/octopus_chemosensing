@@ -14,13 +14,17 @@ The simulation code is written in PyTorch and runs on NVIDIA A100 GPUs. The memo
    - *Impact:* Scales linearly. Even for $10,000$ combinatorial receptors, the energy tensor takes $\approx 400$ MB.
 
 ### The Loss Function Memory Bottleneck
-The choice between Exact Shannon Entropy and the Rényi Proxy fundamentally changes the underlying PyTorch tensor operations, serving as the primary constraint on array scaling:
+The choice of entropy estimator fundamentally changes the underlying PyTorch tensor operations, serving as the primary constraint on array scaling:
 
 3. **Exact Loss Function Bottleneck (`DiscreteExactLoss`):** $\mathcal{O}(B \cdot 2^R)$
    - **The Math:** To compute the exact Shannon entropy, the continuous relaxation outputs an activation probability tensor $\mathbf{A}$ of shape $(B, R)$. We must compute the joint probability of all $2^R$ possible discrete states across the array. This is performed via a tensor product across the receptor dimension, physically allocating a massive tensor of shape $(B, 2^R)$. We then average across the batch to yield the empirical probability of each joint state, and sum the log-probabilities.
    - *Impact:* Scales exponentially. For $R=10$ receptors and $B=2000$, the tensor is $2000 \times 1024$ ($\approx 8$ MB). However, for $R=26$, the tensor becomes $2000 \times 67,108,864$, which requires hundreds of gigabytes. Evaluating exact Shannon entropy is strictly impossible for large arrays (typically failing for $R > 15$).
 
-4. **Proxy Loss Function Bottleneck (`DiscreteProxyLoss`):** $\mathcal{O}(R^2)$
+4. **Blocked Shannon (`'blocked'`):** $\mathcal{O}(R^2 + B \cdot 2^{\text{block\_size}} \cdot \lceil R/\text{block\_size}\rceil)$
+   - **The Math:** Receptors are partitioned into blocks of at most `block_size` (default 15) by correlation-aware greedy clustering. The clustering step computes the absolute Pearson correlation matrix (one `x.T @ x` matmul on centred activity, shape $(R, R)$), then iterates over $R$ receptors in a Python loop — $\mathcal{O}(R^2)$ total. Within each block, exact Shannon entropy is computed on a $(B, 2^{\text{block\_size}})$ histogram. The partition is cached and refreshed every `block_refresh_interval` (default 50) training steps.
+   - *Impact:* The $R^2$ correlation step is negligible vs. the per-block histograms for typical $R$. Memory scales as $\mathcal{O}(B \cdot 2^{\text{block\_size}})$ per block — independent of $R$, making it practical for large arrays. For `block_size=15` and $B=5000$, each block histogram is ~640 MB.
+
+5. **Proxy Loss Function Bottleneck (`DiscreteProxyLoss`):** $\mathcal{O}(R^2)$
    - **The Math:** To bypass the exponential state space, the Rényi entropy proxy evaluates the diversity of the array using pairwise interactions. Given the activation matrix $\mathbf{A}$ of shape $(B, R)$, the core operation is a matrix multiplication $\mathbf{A}^T \mathbf{A}$. This multiplies an $(R, B)$ tensor by a $(B, R)$ tensor, yielding a dense pairwise covariance/repulsion matrix of shape $(R, R)$. We then penalize the off-diagonal elements of this matrix to forcefully orthogonalize the receptors.
    - *Impact:* **This is the primary memory bottleneck during standard training.** Because it operates in $\mathcal{O}(R^2)$ space, it completely avoids the $2^R$ explosion. If $R=10,000$, the resulting $(R, R)$ pairwise matrix takes $\approx 400$ MB, making the optimization of massive arrays highly manageable.
 

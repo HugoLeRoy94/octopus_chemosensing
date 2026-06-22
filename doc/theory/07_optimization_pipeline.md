@@ -252,32 +252,59 @@ quadrature grid impractical), it falls back to the mean-energy approximation.
 
 ## Stage 4 — Loss Computation
 
-Three loss modules exist, selected by `cfg.entropy` in `run.py::_build_loss`.
+Loss modules are selected by `cfg.entropy` in `run.py::_build_loss`.
 
 ### 4a. `DiscreteExactLoss` (`bin_loss.py`) — maximize joint array entropy
 
-**Objective:** `min −H(A)` where A is the binary array activity.
+**Objective:** `min −H(A)` where A is the binary array activity (or `min C` for collision).
 
-Four entropy estimators — pick based on array size:
+Five entropy estimators — pick based on array size:
 
 | `entropy_type` | Complexity | When to use |
 |---|---|---|
 | `'shannon'` | O(B · 2^R) | R < ~15; exact but exponential |
-| `'renyi'` | O(B² · R) | Default scalable choice; exact Rényi H2 |
-| `'blocked'` | O(B · 2^block_size · R/block) | Captures higher-order terms, R up to ~100 |
+| `'collision'` | O(B² · R) | Scalable lower bound; training loss minimises C directly |
+| `'blocked'` | O(B · 2^block_size · R/block) | Upper bound, captures within-block correlations |
+| `'blocked_corrected'` | O(B · 2^block_size + R²) | Tighter: blocked minus cross-block pairwise MI |
 | `'proxy'` | O(B · R²) | Fastest; pairwise covariance/repulsion penalty |
 
-**Rényi trick:** avoids both the 2^R state space and float underflow.
-Computes log P(collision) = Σ_r log P_r(collision), sums in log-space via logsumexp,
-then exponentiates only once at the end. Diagonal (self-collision) entries are masked out
-before averaging. For large batches (B > 2048), cross-chunk evaluation across 8 random
-sub-batches avoids allocating a (B, B) matrix.
+**Collision trick:** computes log P(collision) = Sigma_r log P_r(collision) in log-space
+via logsumexp, then exponentiates once. Training loss returns C = exp(log_mean_coll_prob)
+directly (no log), removing the 1/C gradient blow-up at low collision probability.
+Measurement returns H2 = -log2(C) in bits. For B > 2048, cross-chunk evaluation across
+8 sub-batches avoids the (B, B) matrix.
 
-**Blocked trick:** randomly partitions the R receptors into blocks of `block_size=12`,
-computes exact Shannon entropy within each block, and sums under the independence assumption.
-Averaging over `n_partitions=4` random partitions reduces bias from any particular blocking.
+**Blocked-corrected:** H_blocked - Sigma_{cross-block (i,j)} I(A_i; A_j). The pairwise
+MI matrix is computed via the batch Gram matrix A^T A / B (vectorised, differentiable).
+See §5.5 of `05_optimization.md`.
 
-### 4b. `MaximizeMutualInformationLigandLoss` (`family_mi_loss.py`)
+**Blocked trick — correlation-aware partitioning:** groups receptors by absolute Pearson
+correlation affinity via greedy clustering (see §5.4 of `05_optimization.md`).  Each
+block captures the most correlated receptors together, giving a tighter upper bound on
+the true joint entropy than random partitioning. The partition is computed on detached
+activity (stop-gradient) and cached for `block_refresh_interval=50` training steps to
+avoid gradient instability. Evaluation calls (`use_cache=False`) always build a fresh
+partition from the eval batch. Shared by `blocked` and `blocked_corrected`.
+
+### 4b. `AnnealedEntropyLoss` (`annealed_loss.py`) — annealed blocked -> collision
+
+**Objective:** `min -[(1 - lam) H_blocked + lam H_collision]` where `lam = epoch / epochs`.
+
+Combines the blocked Shannon estimator and collision H2 via linear interpolation.
+Selected via `cfg.entropy = 'annealed'`.
+
+### 4b'. `BlockedToCorrectedLoss` (`annealed_loss.py`) — annealed blocked -> blocked-corrected
+
+**Objective:** `min -[(1 - lam) H_blocked + lam H_blocked_corrected]` where `lam = epoch / epochs`.
+
+Stays within the Shannon family while tightening the bound over training. A
+`lam_override=1.0` gives pure blocked-corrected from epoch 0. Selected via
+`cfg.entropy = 'blocked_to_corrected'`.
+
+Both annealed losses receive `(activity, epoch, epochs)` in `_train` and provide
+`compute_entropy(activity, entropy_type)` for measurement helpers.
+
+### 4c. `MaximizeMutualInformationLigandLoss` (`family_mi_loss.py`) — MI(array; mixture)
 
 **Objective:** `max I(A ; M) = H(A) − H(A | M)`
 
@@ -285,7 +312,7 @@ H(A) is computed on the full batch. H(A | M) conditions on the exact mixture ide
 mixture masks are hashed to integer IDs using binary powers
 `id = Σ_ℓ M_ℓ · 2^ℓ`, then the batch is grouped by ID and entropy computed per group.
 
-### 4c. `MaximizeMutualInformationConcentrationLoss` (`concentration_mi_loss.py`)
+### 4d. `MaximizeMutualInformationConcentrationLoss` (`concentration_mi_loss.py`)
 
 **Objective:** `max I(A ; C) = H(A) − H(A | C)`
 
@@ -301,24 +328,35 @@ for epoch in range(epochs):
     1. anneal temperature   T = T_end + (T_start − T_end) * (1 − epoch/epochs)
     2. sample batch         E, concs, masks = env.sample_batch(batch_size)
     3. compute activity     activity = physics(E, concs, receptor_indices)
-    4. compute loss         loss = loss_fn(activity, ...)
+    4. compute loss         loss = loss_fn(activity, ...)     # see dispatch below
     5. backward + step      loss.backward(); optimizer.step()
     6. eval every 1%        _eval_stats(...)
 ```
 
-**Temperature annealing:** starts at `T_init` (calibrated, ~std of pre-sigmoid terms)
-and decreases linearly to the configured `temperature`. A high T keeps the sigmoid soft
-early in training (smooth gradients); a low T sharpens to binary decisions later.
+**Loss dispatch** in step 4 depends on the loss module type:
+- `DiscreteExactLoss`: `loss_fn(activity)`
+- `AnnealedEntropyLoss`: `loss_fn(activity, epoch, self.config.epochs)` — needs
+  training progress to compute the interpolation parameter λ.
+- `MaximizeMutualInformationLigandLoss`: `loss_fn(activity, mixture_masks=masks)`
+- `MaximizeMutualInformationConcentrationLoss`: `loss_fn(activity, concs=concs)`
+
+**Temperature annealing:** starts at `T_init` and decreases linearly to the configured
+`temperature`. A high T keeps the sigmoid soft early in training (smooth gradients); a
+low T sharpens to binary decisions later. `T_init` is controlled by
+`initial_temperature` in the config: set to `"auto"` (default) to calibrate it as the
+empirical std of pre-sigmoid terms via `compute_initial_temperature`, or to an explicit
+float to override (useful when few ligands make the auto-calibration underestimate the
+scale needed for exploration).
 
 **Warm-starting** (`SweepRunner`): `warm_start: bool` in `RunConfig` controls whether
 chain warm-starting is applied along the trajectory.  At each step after the first,
-`SweepRunner.execute` applies a **2-way rule**:
+`SweepRunner.execute` applies:
 
 | Condition | Action |
 |---|---|
 | `warm_start=False` or first step | **Cold start:** environment built from scratch. |
-| `prev.n_genes != curr.n_genes` | **Chain warm-start:** pass `prev_env` forward; `_initialize` calls `clone_with_extra_units` to expand the gene pool. LR is damped 10×. |
-| `prev.n_genes == curr.n_genes` | **Cold start:** no warm-start applied. |
+| `curr.n_genes > prev.n_genes` | **Chain warm-start:** pass `prev_env` forward; `_initialize` calls `clone_with_extra_units` to expand the gene pool. LR is damped 10×. |
+| `curr.n_genes <= prev.n_genes` | **Cold start:** n_genes decreased → new env group boundary, reset. |
 
 **Typical usage:**
 ```python
@@ -326,7 +364,7 @@ chain warm-starting is applied along the trajectory.  At each step after the fir
 RunConfig(n_genes=[3,4,5,6,7,8], conc_mean=(...), warm_start=True, ...)
 
 # Fixed n_genes, vary other parameters — always cold.
-RunConfig(n_genes=5, entropy=["renyi","shannon"], conc_mean=(...), warm_start=False, ...)
+RunConfig(n_genes=5, entropy=["collision","shannon"], conc_mean=(...), warm_start=False, ...)
 ```
 
 `_initialize` always builds `receptor_indices` fresh from `self.config.receptor_indices`,
@@ -349,11 +387,15 @@ operate on this same batch.
 When `eval_chunk_size < test_batch_size`, soft metrics use one chunk and hard codeword
 metrics are accumulated across all chunks (avoiding CUDA OOM on large eval budgets).
 
+`full_array_entropy` calls `loss_fn.compute_entropy(act, entropy_type=..., use_cache=False)`
+so evaluation always builds a fresh correlation-aware partition from the eval batch,
+never reading or writing the training cache.
+
 Available metrics (add to `measurement_fns` in config):
 
 | Key | Function | What it measures |
 |---|---|---|
-| `full_array_entropy` | `analysis_helper.full_array_entropy` | Rényi H2 + blocked Shannon of joint activity |
+| `full_array_entropy` | `analysis_helper.full_array_entropy` | Collision H2 + blocked + blocked-corrected Shannon of joint activity |
 | `codeword_entropy` | `analysis_helper.codeword_entropy` | Hard plug-in + Miller-Madow entropy of binary codewords |
 | `mean_receptor_distance` | `analysis_helper.mean_receptor_distance` | Average pairwise latent-space distance between receptors |
 | `receptor_distances` | `analysis_helper.receptor_distances` | Full (R, R) pairwise distance matrix |
@@ -452,11 +494,12 @@ range-based RNG sampling).  To obtain multiple statistically independent runs,
 supply multiple entries in the list or run the sweep script multiple times.
 
 **`warm_start: bool` (replaces `warm_start_axis`):**  
-When `True`, steps are sorted by `n_genes` ascending and a chain warm-start is
-applied whenever `n_genes` grows between consecutive steps (previous trained
-environment forwarded via `prev_env`).  All other transitions (n_genes unchanged,
-n_receptors changing) start cold.  When `False`, steps run in natural order and
-every step starts cold.
+When `True`, steps are sorted by `(env_group, n_genes)` — env groups are inferred
+from the input order (a new group begins each time n_genes does not strictly
+increase, i.e. the sweep restarts).  Within each group steps are sorted by
+n_genes ascending and chain warm-started; at group boundaries n_genes decreases,
+which triggers a cold reset.  When `False`, steps run in natural order and every
+step starts cold.
 
 **Folder layout** (written by `IO.py::_run_rel_path`):
 ```
@@ -488,16 +531,36 @@ time based on array size R and entropy estimator:
   Memory cap: the soft-assignment tensor has shape `(B, 2^R)` float32; budget is
   `B × 2^R ≤ 2^35` floats (~128 GiB), yielding `B_max = 2^(35−R)` (~10^6 at R = 15 on A100).
   The cap binds for R ≥ 18, gracefully reducing B back toward the minimum.
-- **Rényi-2**: cost scales as O(B²·R), not O(B·2^R), so a smaller B suffices.
-  `B_train = max(512, 16 · 2^(R/2))`.
-- **Physics bottleneck cap (both entropy types)**: the dominant tensor in `physics.py` is
-  `gathered_flat` of shape `(B, n_ligands, R·k_sub)` float32. At resolve time, 80% of free
-  GPU memory is queried via `torch.cuda.mem_get_info()` and a 4× safety factor is applied
-  for gradients and intermediate tensors: `B_physics = free_mem × 0.8 / (4 · n_ligands · R · k_sub · 4)`.
-  `B_train` is capped to `min(B_train, B_physics)` for both entropy types. This prevents OOM
-  at large R (e.g. R = 30 homomers with n_ligands = 100 and k_sub = 5 would otherwise request
-  ~31 GiB for `gathered_flat` alone).
-- `test_batch_size = 4 · batch_size` in both cases.
+- **Collision**: cost scales as O(B²·R), not O(B·2^R), so a smaller B suffices.
+  `B_train = max(512, 16 · 2^(R/2))`. This heuristic explodes for large R, so it is also
+  capped by the **collision memory bound**: the estimator materialises a `(B, B)` collision
+  matrix (`B²·4` bytes), giving `B_collision = √(budget / (4 · 4))` (4× safety). Without this
+  cap the `(B,B)` term is bounded only by the physics cap below, which ignores it.
+- **Blocked Shannon**: builds `(B, 2^block_size)` histograms (default `block_size=15` →
+  `2^15`), *not* `(B, 2^R)` — so it is **not** subject to the Shannon `2^R` cap (that
+  misclassification pinned B to the floor of 512). `ceil(R/block_size)·n_partitions` such
+  histograms are retained for backward: `B_blocked = budget / (2^block_size · ceil(R/block_size)
+  · n_partitions · 4 · 4)`. Independent of R, so the physics cap below typically binds.
+- **proxy / mi_***: O(B·R²) or O(B·R) — no exponential or `B²` term; physics-bound.
+- **Physics bottleneck cap (all estimators)**: in the **interface model** the
+  forward+backward holds *many* `(B, n_ligands, R·k_sub)` float32 tensors simultaneously —
+  in `_compute_energies` (`ab`, `dist_sq`, `exp(·)`, `E_open`) and again in `p_open`
+  (`log_terms_open/closed`), several retained for backward plus their gradients. The
+  retained energy graph also coexists with the collision `(B,B)` matrix during loss/backward,
+  so the factor must leave headroom for that term too. A **16× safety factor** is applied:
+  `B_physics = free_mem × 0.8 / (16 · n_ligands · R · k_sub · 4)` (80% of free GPU memory,
+  queried via `torch.cuda.mem_get_info()`). `B_train = min(B_train, B_physics)`.
+  - The old 4× factor assumed a *single* such tensor and OOM'd for the interface model.
+    It survived for the **classic model** only by accident: there the energy tensor is
+    `(B, n_ligands, U)` with `U = n_genes` (no `k_sub` axis), so charging `R·k_sub` over-
+    estimates by `k_sub` — a hidden ~5× cushion that vanishes once `use_interface_model=True`.
+  - Note `s_upper ≤ n_ligands`, so `n_ligands` is a conservative bound on the present-ligand
+    axis of the energy tensor. When the presence sampler is dense (e.g. `n_presence_blocks=1`,
+    large `mu_ligands_per_source`) `s_upper` saturates to `n_ligands` and the bound is tight.
+- `test_batch_size = 4 · batch_size` in all cases. Safe despite the larger value because
+  evaluation is **chunked** (`_eval_stats`): soft metrics (incl. collision `(B,B)`) run on a
+  single `chunk_size = train batch_size` pass; `test_batch_size` only drives multi-pass
+  accumulation of hard-codeword metrics.
 
 ---
 
@@ -626,8 +689,19 @@ Canonical representative: the **lexicographically minimum cyclic rotation** of t
 |---|---|
 | `generate_ordered_receptor_indices` | Random sample from all canonical cyclic arrangements; accepts optional `seed` |
 | `generate_targeted_ordered_receptors` | Explicit counts per complexity level; accepts optional `seed` |
-| `generate_cascading_ordered_receptors` | Fill quota by complexity: homomers first; accepts optional `seed` |
+| `generate_cascading_ordered_receptors` | Fill quota by complexity: homomers first; **lazy per-tier** (see below); accepts optional `seed` |
 
-**Cost note:** enumeration generates at most `|combos| × k_sub!` candidate permutations,
-then deduplicates via canonical form.  For n_genes=26, k_sub=5 this is ~17 M operations
-— acceptable at init time but not on the hot path.
+**Cost note:** the random/targeted variants enumerate the full pool: at most
+`|combos| × k_sub!` candidate permutations, then deduplicate via canonical form.
+For n_genes=26, k_sub=5 this is ~17 M operations — but it scales steeply with
+n_genes (n_genes=35 → ~85 s).
+
+**Cascading is lazy.** `generate_cascading_ordered_receptors` builds one
+complexity tier at a time via `_tier_canonical_forms(n_genes, k_sub, n_unique)`
+(genes chosen by `C(n_genes, n_unique)`, stoichiometries by
+`_positive_compositions`), ascending from homomers, and stops as soon as the
+`n_sensors` quota is filled. High-complexity tiers (4-mers, 5-mers) — which
+dominate the pool — are never enumerated when `n_sensors` is small. For
+n_genes=35, k_sub=5, n_sensors≤49 only tiers 1–2 are built (~50 ms vs ~85 s for
+full enumeration). The seeded intra-tier shuffle is applied to a `sorted()`
+tier list, so output is reproducible across runs/platforms.

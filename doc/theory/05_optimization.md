@@ -1,4 +1,4 @@
-# 5. Discrete Optimization & The Rényi Entropy Proxy
+# 5. Discrete Optimization & Entropy Estimators
 
 To computationally optimize the receptor array, our objective is to tune the chemical affinities of each genetic subunit. Three per-unit parameters are jointly learned by gradient descent:
 
@@ -23,12 +23,83 @@ $$H(\mathcal{A}) = -\sum_{\mathcal{A}} P(\mathcal{A}) \log_2 P(\mathcal{A})$$
 
 However, computing this requires evaluating the probability of all $2^R$ possible discrete states (for an array of $R$ binary receptors). For an array of 26 receptors, this means computing 67 million states per gradient step, which is computationally impossible and causes Out Of Memory (OOM) errors on modern GPUs.
 
-## 5.3 The Rényi Entropy Proxy
-To solve the dimensionality explosion, we rely on a computationally tractable surrogate: the **Rényi Entropy** (specifically of order 2). 
+## 5.3 The Collision Entropy
 
-The Rényi entropy of order 2 is defined as:
-$$H_2(\mathcal{A}) = -\log_2 \sum_{\mathcal{A}} P(\mathcal{A})^2$$
+To solve the dimensionality explosion, we rely on a computationally tractable surrogate: the **collision entropy** (Renyi entropy of order 2, H2).
 
-The immense computational advantage of Rényi entropy is that it can be computed directly using the pairwise interactions (the Information Potential) of the array's activity across a batch of ligands, rather than requiring the full joint state distribution.
+$$H_2(\mathcal{A}) = -\log_2 C, \qquad C = \sum_{\mathcal{A}} P(\mathcal{A})^2$$
 
-In our simulation pipeline, we seamlessly choose between optimizing the **Exact Entropy** (Shannon) or the **Proxy Entropy** (Rényi) depending on the configuration. By directly optimizing this Rényi proxy, we push the array towards maximum diversity without relying on split heuristic penalties. Because evaluating the information potential scales quadratically $\mathcal{O}(R^2)$ rather than exponentially, it makes the optimization of large arrays computationally feasible while still effectively maximizing the overall information capacity.
+where $C$ is the **collision probability** — the probability that two independent draws from the array produce the exact same activation pattern.
+
+The computational advantage is that $C$ can be estimated from pairwise comparisons across a batch of $B$ ligand exposures ($\mathcal{O}(B^2 \cdot R)$), without enumerating the $2^R$ state space.
+
+### Training loss: minimise $C$ directly
+
+The measurement estimator returns $H_2 = -\log_2 C$ (bits). For training, however, the loss minimises $C$ itself rather than $-H_2$:
+
+$$\mathcal{L}_{\text{collision}} = C = \exp(\text{log\_mean\_coll\_prob})$$
+
+This is equivalent ($\arg\min C = \arg\max H_2$) but removes the $1/C$ factor from the gradient of $-\log C$, which blows up in late training when $C$ becomes small. The reported measurement value is unchanged.
+
+## 5.4 Correlation-Aware Blocked Entropy
+
+The blocked Shannon estimator partitions the $R$ receptors into blocks of at most `block_size` receptors, computes exact Shannon entropy within each block, and sums under a between-block independence assumption:
+
+$$H_{\text{blocked}} = \sum_{k} H_{\text{exact}}(\text{block}_k)$$
+
+This is always an **upper bound** on the true joint entropy $H(\mathcal{A})$, since the between-block independence assumption can only inflate the estimate. The bound is tight when between-block correlations are small.
+
+To minimize this gap, receptors are grouped by **correlation-aware greedy clustering** rather than random partitioning. The algorithm computes the absolute Pearson correlation matrix $|\rho_{ij}|$ over the current batch (a single `x.T @ x` matmul on centred activity, with the diagonal zeroed). It then greedily seeds each block with the highest-affinity remaining pair, and grows it by repeatedly adding the receptor with the maximum summed affinity to the current block members, until the block reaches `block_size`. The procedure repeats until all receptors are assigned.
+
+Because the partition depends on the current batch statistics, it is computed on **detached** activity (stop-gradient): the grouping does not contribute to the computational graph, and gradients flow only through the within-block Shannon entropy terms. To avoid gradient instability from abrupt partition changes, the partition is **cached** and refreshed only every `block_refresh_interval` training steps (default 50). Evaluation calls always compute a fresh partition (`use_cache=False`).
+
+Complexity: $\mathcal{O}(R^2)$ for the correlation matrix plus $\mathcal{O}(B \cdot 2^{\text{block\_size}})$ per block for exact Shannon — unchanged from the random-partition version, with the $R^2$ term negligible in practice.
+
+## 5.5 Blocked-Corrected Entropy
+
+The plain blocked estimator ignores cross-block correlations entirely. The **blocked-corrected** estimator subtracts the pairwise mutual information (MI) between all receptor pairs in *different* blocks:
+
+$$H_{\text{blocked\_corrected}} = H_{\text{blocked}} - \sum_{\substack{(i,j) \\ \text{cross-block}}} I(A_i; A_j)$$
+
+The binary pairwise MI $I(A_i; A_j)$ is computed from the batch Gram matrix:
+- $P(A_i=1, A_j=1) = (\mathbf{A}^\top \mathbf{A} / B)_{ij}$
+- Marginals from column means.
+- Standard four-term MI formula, vectorised over all $(R, R)$ pairs in a single pass.
+
+Within-block joint distributions are already exact in $H_{\text{blocked}}$; the MI correction only applies to cross-block pairs (upper triangle of a boolean mask built from block assignments).
+
+Properties:
+- **Tighter than blocked:** $H_{\text{blocked\_corrected}} \leq H_{\text{blocked}}$ always.
+- **Pairwise limit:** only pairwise cross-block dependencies are corrected. Higher-order cross-block structure (e.g., XOR of 3 variables across blocks) escapes the correction.
+- **Differentiable:** gradients flow through both the blocked term (via soft_assign) and the MI correction (via the activity).
+- **Selectable as a first-class training loss:** `entropy='blocked_corrected'` in the config.
+
+## 5.6 Annealed Blocked -> Collision Schedule
+
+Both the blocked Shannon estimator and the collision H2 estimator have complementary strengths: blocked Shannon provides strong, unbiased gradients early in training (fast basin-finding), while collision H2 gives a faithful lower bound on joint entropy that cannot be inflated by correlated receptors. The **annealed** loss (`entropy='annealed'`) combines both via a linear interpolation controlled by training progress:
+
+$$\mathcal{L}_{\text{annealed}} = -\bigl[(1 - \lambda)\, H_{\text{blocked}} + \lambda\, H_{\text{collision}}\bigr], \qquad \lambda = \frac{\text{epoch}}{\text{epochs}}.$$
+
+- **$\lambda = 0$ (epoch 0):** pure blocked Shannon — fast basin-finding.
+- **$\lambda = 1$ (final epoch):** pure collision H2 — faithful lower bound.
+
+## 5.7 Blocked-to-Corrected Schedule
+
+An alternative annealing that stays within the Shannon family: the **blocked-to-corrected** loss (`entropy='blocked_to_corrected'`) ramps from plain blocked to blocked-corrected:
+
+$$\mathcal{L}_{\text{b2c}} = -\bigl[(1 - \lambda)\, H_{\text{blocked}} + \lambda\, H_{\text{blocked\_corrected}}\bigr], \qquad \lambda = \frac{\text{epoch}}{\text{epochs}}.$$
+
+This avoids the collision estimator entirely while still tightening the bound over training. A `lam_override=1.0` configuration makes it pure blocked-corrected from epoch 0.
+
+## Naming summary
+
+| Config string | Estimator (bits) | Training loss |
+|---|---|---|
+| `shannon` | Exact Shannon H | $-H$ |
+| `collision` | Collision H2 = $-\log_2 C$ | $C$ (collision probability, no log) |
+| `blocked` | Blocked Shannon (upper bound) | $-H_{\text{blocked}}$ |
+| `blocked_corrected` | Blocked - cross-block MI (point estimate) | $-H_{\text{blocked\_corrected}}$ |
+| `annealed` | Blocked (measurement) | $-[(1-\lambda) H_{\text{blocked}} + \lambda H_{\text{collision}}]$ |
+| `blocked_to_corrected` | Blocked-corrected (measurement) | $-[(1-\lambda) H_{\text{blocked}} + \lambda H_{\text{blocked\_corrected}}]$ |
+
+Measurement brackets: `collision` (certified lower bound) and `blocked` (certified upper bound); `blocked_corrected` is the point estimate between them.
