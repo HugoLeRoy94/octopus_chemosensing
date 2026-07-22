@@ -1,0 +1,25 @@
+\color{red}{The biological role of a sensory array is to detect a wide variety of ligands at various concentrations. To achieve this, chemosensitive systems such as olfaction often rely on gene expansion to generate a diverse array of receptors, each sensitive to different chemicals. The combined activation pattern of the overall array provides a coding between the environmental input (ligand identity and concentration, respectively denoted $\ell$ and $c$) and the encoding signal (the array's activation pattern, denoted $A$).}
+
+We measure the encoding capacity of this array using mutual information (MI):
+
+
+\begin{equation}
+MI(A;(c,\ell)) = H(A) - H(A | c,\ell)
+\end{equation}
+
+
+where $H(A)$ is the entropy of the activation pattern, $H(A) = \sum_A p(A) \log(A)$, and $MI$ is measured in bits. We consider the limit of noiseless receptors, meaning the activation pattern $A$ is determined deterministically from the environmental input $(c,\ell)$. Consequently, the conditional entropy becomes zero, and the mutual information reduces to the empirical entropy of $A$ under given environmental conditions. \color{blue}{Intuitively, the MI measures how much an organism can learn about its environment simply by reading its sensory activation pattern. This capacity increases with the number of unique patterns and decreases with redundant coding (where different inputs yield indistinguishable activation patterns). Optimally, there exists a unique codeword for every input, maximizing the activation entropy to $H(A) = R$, where $R$ is the total number of receptors.}
+
+It is established that for a sensory array to function optimally, its receptors must be uncorrelated. While heteromerization massively expands the combinatorial family of receptors, these heteromers share protein subunits and are therefore chemically coupled. It is thus unclear whether heteromerization provides additional discriminatory information or merely redundant signals. To address this, we simulated the response of a receptor array to random sensing events.
+
+First, we expanded the Monod-Wyman-Changeux model to derive a physical model for heteromeric ion channels, establishing a relationship between the opening probability of hetero-pentamers and homo-pentamers based on subunit-ligand affinities (see Supplementary Material). In the limit of a binary response, a single dissociation constant per gene-ligand pair dictates the activation threshold ($EC_{50}$) at which the channel opens.
+
+Next, we designed a simulated environment to model random ligand encounters. Unlike previous studies that rely on uncorrelated chemical environments, incorporating correlation is essential here to capture the unique, coupled properties of heteromers. We represent the morphological and chemical properties of both the ligands and the subunit binding pockets as vectors in Euclidean space, denoted $\mathbf{v}_\ell$ and $\mathbf{v}_u$, respectively. The activation threshold varies from a minimum value for highly compatible ligand-subunit pairs to a maximum for morphochemically distinct pairs. We implemented this mathematically as a Gaussian radial basis function, setting the activation threshold as $\log(EC_{50}) \propto \exp(\|\mathbf{v}_u - \mathbf{v}_\ell\|^2)$ (see Supplementary Material). To simulate how evolution optimizes receptors to their environment, we optimized the subunit vectors $\mathbf{v}_u$ to maximize the array's mutual information.
+
+This framework allows us to generate arbitrarily complex environments. We selected a parameter regime where our results are robust to exact environmental variations, ensuring that our baseline homomeric channels behave as a theoretically "perfect" array. This guarantees that the environment itself does not arbitrarily limit the array's entropy, meaning any observed differences in MI stem purely from the array's biological architecture.
+
+**Figure 1** displays the averaged mutual information for a growing number of encoding genes ($n_{genes}$) across various degrees of heteromerization. As shown, increasing the heteromerization index (the ratio of total receptors to encoding genes, $R/n_{genes}$) significantly elevates the mutual information, proving that heteromerization is a viable biological strategy to expand coding capacity. However, two theoretical limitations exist. First, the marginal gain in information decays as the heteromerization index rises. This occurs because receptors become increasingly correlated at higher indices; for instance, the response of a 3-gene heteromer can be largely approximated by combining the responses of all 2-gene receptor combinations. Second, at a fixed total number of receptors ($R$), heteromerization is inherently less effective than pure gene expansion, because heteromers cannot achieve the perfect, uncorrelated behavior of an idealized homomeric array (see Supplementary Material).
+
+*(Note: The legend text you provided is excellent and requires almost no changes. Simply attach it directly to Figure 1.)*
+
+

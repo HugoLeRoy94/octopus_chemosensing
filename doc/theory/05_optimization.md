@@ -41,6 +41,22 @@ $$\mathcal{L}_{\text{collision}} = C = \exp(\text{log\_mean\_coll\_prob})$$
 
 This is equivalent ($\arg\min C = \arg\max H_2$) but removes the $1/C$ factor from the gradient of $-\log C$, which blows up in late training when $C$ becomes small. The reported measurement value is unchanged.
 
+## 5.3b Kolchinsky–Tracey Bhattacharyya Lower Bound (`kt`)
+
+The collision estimator is a Rényi-$H_2$ surrogate; the **Kolchinsky–Tracey (KT)** estimator instead gives a certified **lower bound on the true Shannon** joint entropy $H(\mathcal{A})$ of the same uniform mixture $p(s) = \tfrac{1}{B}\sum_b \prod_r \text{Bernoulli}(A_{br})$, $s\in\{0,1\}^R$. It is tight in the well-separated / noiseless regime (distinct near-deterministic codewords). Reference: Kolchinsky & Tracey, *Estimating Mixture Entropy with Pairwise Distances*, Entropy 2017.
+
+Using the Bhattacharyya affinity $\text{BC}(i,j)$ between two Bernoulli-product components:
+
+$$H_{\text{KT}} = H_{\text{cond}} - \frac{1}{B}\sum_i \log_2\!\Big(\frac{1}{B}\sum_j \text{BC}(i,j)\Big)$$
+
+$$H_{\text{cond}} = \frac{1}{B}\sum_b \sum_r h_2(A_{br}),\qquad h_2(a) = -a\log_2 a - (1-a)\log_2(1-a)$$
+
+$$\log \text{BC}(i,j) = \sum_r \log\!\Big(\sqrt{A_i A_j} + \sqrt{(1-A_i)(1-A_j)}\Big)\quad(\text{natural log})$$
+
+$H_{\text{cond}}$ is the mean per-component (conditional) entropy; the second term is the inter-component overlap. **All pairs are summed, the diagonal is kept**, and the inner sum is normalised by the **total** batch $B$. Because $\text{BC}(i,i)=1$, the self-term anchors each inner sum at $1/B$, so the resolvable-entropy ceiling is $\log_2 B$ (total batch) — contrast the collision estimator, whose adjacent-chunk / diagonal-masked scheme caps its ceiling at $\log_2(\texttt{chunk\_size})$. The two limits: $B$ distinct near-deterministic codewords give $H_{\text{KT}} \approx \log_2 B$ (+ small $H_{\text{cond}}$); $B$ identical sniffs at $A=0.5$ give a zero inter-component term and $H_{\text{KT}} = R$.
+
+Complexity: $\mathcal{O}(B^2 R / \texttt{chunk})$ time (quadratic in total batch), $\mathcal{O}(\texttt{chunk}^2 R)$ peak memory (same scaling as the collision $(R,m,m)$ block). Implemented as two nested chunk loops (outer $i$-chunks, inner $j$-chunks spanning the whole batch) with `cat` + `logsumexp` over the full row, so gradients flow through every chunk.
+
 ## 5.4 Correlation-Aware Blocked Entropy
 
 The blocked Shannon estimator partitions the $R$ receptors into blocks of at most `block_size` receptors, computes exact Shannon entropy within each block, and sums under a between-block independence assumption:
@@ -97,6 +113,7 @@ This avoids the collision estimator entirely while still tightening the bound ov
 |---|---|---|
 | `shannon` | Exact Shannon H | $-H$ |
 | `collision` | Collision H2 = $-\log_2 C$ | $C$ (collision probability, no log) |
+| `kt` | KT Bhattacharyya lower bound on Shannon $H$ | $-H_{\text{KT}}$ |
 | `blocked` | Blocked Shannon (upper bound) | $-H_{\text{blocked}}$ |
 | `blocked_corrected` | Blocked - cross-block MI (point estimate) | $-H_{\text{blocked\_corrected}}$ |
 | `annealed` | Blocked (measurement) | $-[(1-\lambda) H_{\text{blocked}} + \lambda H_{\text{collision}}]$ |

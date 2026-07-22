@@ -90,7 +90,7 @@ print(top_10_patterns.to_string(index=False))
 # 3. Gene expression probability conditioned on total expressed genes
 # ---------------------------------------------------------
 total_expressed = A.sum(axis=0)  # (n_cells,): number of genes on per cell
-k_values = np.arange(nR + 1)
+k_values = np.arange(1,6,1)#np.arange(nR + 1)
 
 # k_mask[k, c] = 1 iff cell c has exactly k genes expressed
 k_mask = (total_expressed[np.newaxis, :] == k_values[:, np.newaxis])  # (nR+1, n_cells)
@@ -111,23 +111,38 @@ norm_enrich = CenteredNorm(vcenter=1,halfrange=2)#TwoSlopeNorm(vcenter=1, vmin=0
 cmap_enrich = plt.get_cmap('RdBu_r').copy()
 cmap_enrich.set_bad(color='lightgray')
 
-fig, axs = plt.subplots(2, 1, figsize=(14, 8), gridspec_kw={'height_ratios': [1, 3]}, sharex=True)
+plt.rcParams.update({
+    'font.size': 9,
+    'font.family': 'serif',
+    'mathtext.fontset': 'cm',
+    'xtick.direction': 'in',
+    'ytick.direction': 'in',
+})
+
+fig = plt.figure(figsize=(8, 8))
+gs = fig.add_gridspec(2, 2, height_ratios=[1, 3], width_ratios=[20, 1], hspace=0.15, wspace=0.05)
+ax0 = fig.add_subplot(gs[0, 0])
+ax1 = fig.add_subplot(gs[1, 0], sharex=ax0)
+cax = fig.add_subplot(gs[1, 1])
+axs = [ax0, ax1]
 
 axs[0].bar(k_values, k_counts, color='steelblue', edgecolor='black')
 axs[0].set_ylabel('Cell count')
 axs[0].set_title('Distribution of total expressed genes per cell')
 
-im = axs[1].imshow(enrichment[id_sort, :], aspect='auto', cmap=cmap_enrich, norm=norm_enrich)
+im = axs[1].imshow(enrichment[id_sort, :], aspect='auto', cmap=cmap_enrich, norm=norm_enrich,
+                    extent=[k_values[0] - 0.5, k_values[-1] + 0.5, nR - 0.5, -0.5])
 axs[1].set_yticks(np.arange(nR))
-axs[1].set_yticklabels(CRnames[id_sort], fontsize=7)
+axs[1].set_yticklabels(CRnames[id_sort], fontsize=9)
 axs[1].set_xticks(k_values)
+axs[1].set_xlim(k_values[0] - 0.5, k_values[-1] + 0.5)
 axs[1].set_xlabel('Number of expressed genes in cell (k)')
 axs[1].set_ylabel('Gene')
 axs[1].set_title('Enrichment  P(gene | L=k) / (k/N)  — white = flat expectation')
 
-plt.colorbar(im, ax=axs[1], label='Enrichment (1 is no enrichement)')
+plt.colorbar(im, cax=cax, label='Enrichment (1 is no enrichement)')
 plt.tight_layout()
-plt.savefig('P_conditionned.png')
+plt.savefig('P_conditionned_k5.svg')
 
 # %%
 

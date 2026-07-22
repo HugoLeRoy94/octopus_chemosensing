@@ -264,6 +264,7 @@ Five entropy estimators — pick based on array size:
 |---|---|---|
 | `'shannon'` | O(B · 2^R) | R < ~15; exact but exponential |
 | `'collision'` | O(B² · R) | Scalable lower bound; training loss minimises C directly |
+| `'kt'` | O(B² · R) time, O(chunk² · R) mem | Certified Shannon lower bound (Kolchinsky–Tracey Bhattacharyya); tight when components separate. Ceiling log2(total B) via diagonal anchoring |
 | `'blocked'` | O(B · 2^block_size · R/block) | Upper bound, captures within-block correlations |
 | `'blocked_corrected'` | O(B · 2^block_size + R²) | Tighter: blocked minus cross-block pairwise MI |
 | `'proxy'` | O(B · R²) | Fastest; pairwise covariance/repulsion penalty |
@@ -271,8 +272,27 @@ Five entropy estimators — pick based on array size:
 **Collision trick:** computes log P(collision) = Sigma_r log P_r(collision) in log-space
 via logsumexp, then exponentiates once. Training loss returns C = exp(log_mean_coll_prob)
 directly (no log), removing the 1/C gradient blow-up at low collision probability.
-Measurement returns H2 = -log2(C) in bits. For B > 2048, cross-chunk evaluation across
-8 sub-batches avoids the (B, B) matrix.
+Measurement returns H2 = -log2(C) in bits. For B > collision_chunk_size, the batch is
+split into ceil(B / collision_chunk_size) chunks; cross-chunk log-probabilities are
+concatenated and reduced via a single logsumexp so the full batch is consumed (no
+samples discarded). The collision_chunk_size is sized to GPU memory at init time by
+``resolve_batch_sizes`` (see §06.4 for the formula); it defaults to 2048 when not
+configured. Chunk size (quadratic memory) raises the bit ceiling; chunk count (linear)
+only reduces variance.
+
+**KT (Kolchinsky–Tracey):** certified lower bound on the *same* Shannon H(s) that
+`shannon` computes exactly, via pairwise Bhattacharyya affinities.
+H_KT = H_cond - (1/B) Sigma_i log2( (1/B) Sigma_j BC(i,j) ), with
+H_cond = mean_b Sigma_r h2(A_br) and log BC(i,j) = Sigma_r log(sqrt(A_i A_j) +
+sqrt((1-A_i)(1-A_j))). ALL pairs, **diagonal kept**, normalised by **total** B: since
+BC(i,i)=1, the self-term anchors the inner sum at 1/B and the resolvable ceiling is
+log2(total B) — not log2(chunk) as for collision. Two nested chunk loops (outer i-chunks,
+inner j-chunks over the whole batch, cat + logsumexp) give O(B²·R) time (quadratic in
+total batch) and O(chunk²·R) memory; it reuses `collision_chunk_size` (identical memory
+scaling). Dispatched via the generic `-compute_entropy(activity)` path (no collision-style
+C-return trick). The config flag `recompute_backward=True` gradient-checkpoints the inner
+loop so the training batch is bounded by compute rather than retained memory (see
+Batch-size auto-scaling below).
 
 **Blocked-corrected:** H_blocked - Sigma_{cross-block (i,j)} I(A_i; A_j). The pairwise
 MI matrix is computed via the batch Gram matrix A^T A / B (vectorised, differentiable).
@@ -325,13 +345,20 @@ computes entropy per bin.
 
 ```
 for epoch in range(epochs):
-    1. anneal temperature   T = T_end + (T_start − T_end) * (1 − epoch/epochs)
+    1. anneal temperature   frac = min(1, epoch / (0.8*epochs))
+                            T = T_end + (T_start − T_end) * (1 − frac)
+                            # reaches T_end at 80% of epochs, holds it for the last 20%
     2. sample batch         E, concs, masks = env.sample_batch(batch_size)
     3. compute activity     activity = physics(E, concs, receptor_indices)
     4. compute loss         loss = loss_fn(activity, ...)     # see dispatch below
     5. backward + step      loss.backward(); optimizer.step()
-    6. eval every 1%        _eval_stats(...)
+    6. log every 1%         per_epoch_measure ? _eval_stats(...) : {loss, train_entropy=-loss}
 ```
+
+Steps 2–5 are wrapped in `record_function("prof:…")` labels (sample+physics_fwd / loss_fwd /
+backward) — inert unless a `torch.profiler` run is active (`tasks/profiling/`), used to group ops
+in the profiler trace. Step 6 logs the free training objective instead of a test measurement when
+`per_epoch_measure=False` (see Batch-size auto-scaling).
 
 **Loss dispatch** in step 4 depends on the loss module type:
 - `DiscreteExactLoss`: `loss_fn(activity)`
@@ -341,8 +368,12 @@ for epoch in range(epochs):
 - `MaximizeMutualInformationConcentrationLoss`: `loss_fn(activity, concs=concs)`
 
 **Temperature annealing:** starts at `T_init` and decreases linearly to the configured
-`temperature`. A high T keeps the sigmoid soft early in training (smooth gradients); a
-low T sharpens to binary decisions later. `T_init` is controlled by
+`temperature`, reaching it at **80% of epochs** and then holding it for the final 20%.
+The hold matters because `_eval_stats` always measures at `temperature` (the sharp T):
+without it the training T equals the eval T only at the last epoch, so the sharp-T
+objective is under-optimized and the logged entropy spikes at the buzzer. A high T keeps
+the sigmoid soft early in training (smooth gradients); a low T sharpens to binary
+decisions later. `T_init` is controlled by
 `initial_temperature` in the config: set to `"auto"` (default) to calibrate it as the
 empirical std of pre-sigmoid terms via `compute_initial_temperature`, or to an explicit
 float to override (useful when few ligands make the auto-calibration underestimate the
@@ -395,14 +426,17 @@ Available metrics (add to `measurement_fns` in config):
 
 | Key | Function | What it measures |
 |---|---|---|
-| `full_array_entropy` | `analysis_helper.full_array_entropy` | Collision H2 + blocked + blocked-corrected Shannon of joint activity |
+| `full_array_entropy` | `analysis_helper.full_array_entropy` | The loss's NATIVE joint-entropy estimator only (`loss_fn.compute_entropy` default: collision for a collision loss, blocked for annealed, blocked_corrected for blocked_to_corrected, kt for a kt loss). Logs a single `full_array_entropy` column. |
+| `entropy_collision` / `entropy_blocked` / `entropy_blocked_corrected` / `entropy_kt` / `entropy_kt_upper` | `analysis_helper.entropy_*` | Opt-in extra estimators, each logging one column (`full_array_entropy_collision` / `_blocked` / `_blocked_corrected` / `_kt` / `_kt_upper`). Add to `measurement_fns` to record estimators other than the loss's own (e.g. the `optimizer` task requests all to compare losses on a common footing). Each is a full extra evaluation. `entropy_kt` / `entropy_kt_upper` are computed on the soft assignment (not via `compute_entropy`, which `AnnealedEntropyLoss` rejects for `'kt'`). KT is all-pairs O(B²·R) with resolvable-entropy ceiling log₂(B); it is measured on the **full eval batch** `test_batch_size` (see below), generated in sub-batches and tiled internally so peak memory is bounded by the tile, not B — **no sample cap; only time grows (O(B²))**. `entropy_kt` is the Bhattacharyya **lower** bound, `entropy_kt_upper` the KL-divergence **upper** bound (clamped to R bits); together they bracket the true joint entropy H(s) — certified, and tight in the well-separated (optimized) regime. |
 | `codeword_entropy` | `analysis_helper.codeword_entropy` | Hard plug-in + Miller-Madow entropy of binary codewords |
 | `mean_receptor_distance` | `analysis_helper.mean_receptor_distance` | Average pairwise latent-space distance between receptors |
 | `receptor_distances` | `analysis_helper.receptor_distances` | Full (R, R) pairwise distance matrix |
 | `conditional_entropy_ligand` | `analysis_helper.conditional_entropy_ligand` | (1/N_l) Σ H(A \| L_l) |
 | `mutual_information_ligand` | `analysis_helper.mutual_information_ligand` | (1/N_l) Σ I(A ; L_l) |
-| `conditional_entropy_concentration` | `analysis_helper.conditional_entropy_concentration` | (1/N_l) Σ H(A \| C_l) |
-| `mutual_information_concentration` | `analysis_helper.mutual_information_concentration` | (1/N_l) Σ I(A ; C_l) |
+| `conditional_entropy_concentration` | `analysis_helper.conditional_entropy_concentration` | mean over present ligands of H(A \| C_l, l present) — dense per-ligand conc |
+| `mutual_information_concentration` | `analysis_helper.mutual_information_concentration` | mean over present ligands of I(A ; C_l \| l present) — concentration (level) coding |
+| `concentration_channel` | `analysis_helper.concentration_channel` | H(A \| M) — condition on the full presence pattern; concentration channel I(A;c\|M), total-comparable |
+| `identity_channel` | `analysis_helper.identity_channel` | I(A ; M) = H(A) − H(A \| M) — composition/identity channel, total-comparable (identity_channel + concentration_channel = H(A)) |
 | `conditional_entropy_family` | `analysis_helper.conditional_entropy_family` | (1/N_f) Σ H(A \| F_f) — latent-space families |
 | `mutual_information_family` | `analysis_helper.mutual_information_family` | (1/N_f) Σ I(A ; F_f) |
 | `conditional_entropy_block` | `analysis_helper.conditional_entropy_block` | (1/N_b) Σ H(A \| B_b) — source blocks |
@@ -460,17 +494,35 @@ returns the average pairwise MI: `(1/N_l) Σ_l I(A ; L_l)`.
 This avoids the combinatorial explosion of the joint mixture pattern (2^N_l
 possible groups), which would require enormous batches to estimate reliably.
 
-**`conditional_entropy_concentration` / `mutual_information_concentration` — per-ligand marginal, quantile binning:**
-Each ligand l is treated independently. Samples are sorted by c_l and split into
-`n_c_bins` equal-quantile bins. The conditional entropy for ligand l is:
+**`conditional_entropy_concentration` / `mutual_information_concentration` — per-ligand,
+present-only, quantile binning:**
+Each ligand l is scored on a DENSE `(B, L)` per-ligand concentration `concs_dense`
+(identity-aligned, 0 for absent), built by `sample_batch(return_dense_conc=True)` from the
+same `sparse_idx`/`concs` that produced the activity. For ligand l we keep only the samples
+where it is present (`mixture_masks[:, l] == 1`), sort those by `c_l`, split into `n_c_bins`
+equal-count bins, and average:
 
 ```
-H(A | C_l) ≈ Σ_k (n_k/B) · H(A | C_l ∈ bin_k)
+H(A | C_l, l present) ≈ Σ_k (n_k/n_present) · H(A | bin_k)
+I(A ; C_l | l present)  = H(A | l present) − H(A | C_l, l present)
 ```
 
-The function returns `(1/N_l) Σ_l H(A | C_l)`, so `mutual_information_concentration`
-returns `(1/N_l) Σ_l I(A ; C_l)` — the mean pairwise MI between the receptor array
-and each individual ligand's concentration.
+Ligands present in `< 2·n_c_bins` samples are skipped; the metric is the mean over scored
+ligands. The present-only restriction removes the presence/absence confound, so this measures
+genuine concentration (level) coding — unlike the old version, which iterated over the sparse
+present-*slot* columns (arbitrary order + padding zeros) and was meaningless. This is still a
+per-ligand MARGINAL average, NOT on the joint `full_array_entropy` scale.
+
+**`identity_channel` / `concentration_channel` — joint, total-comparable:**
+Conditioning on the *full* presence pattern M (samples grouped by identical mask via
+`torch.unique`) gives the exact chain-rule split `H(A) = I(A;M) + H(A|M)`: `identity_channel`
+is the composition channel I(A;M), `concentration_channel` is the concentration residual
+H(A|M) = I(A;c|M), and they sum to `full_array_entropy`. Use the reliance fractions
+`identity_channel / full_array_entropy` and `concentration_channel / full_array_entropy`
+(which sum to 1) to compare how much an architecture leans on identity vs concentration coding.
+Reliable only when patterns repeat (single-ligand / low-`mu_ligands_per_source` sniffs, where M
+is the categorical ligand id); in dense mixtures rows are nearly all unique → H(A|M) collapses
+to 0 and I(A;M) → H(A) spuriously.
 
 **Miller-Madow correction:** the plug-in entropy estimator is biased downward for finite
 batch sizes. The Miller-Madow correction adds `(K_hat − 1) / (2·B·ln2)` where K_hat is
@@ -531,22 +583,42 @@ time based on array size R and entropy estimator:
   Memory cap: the soft-assignment tensor has shape `(B, 2^R)` float32; budget is
   `B × 2^R ≤ 2^35` floats (~128 GiB), yielding `B_max = 2^(35−R)` (~10^6 at R = 15 on A100).
   The cap binds for R ≥ 18, gracefully reducing B back toward the minimum.
-- **Collision**: cost scales as O(B²·R), not O(B·2^R), so a smaller B suffices.
-  `B_train = max(512, 16 · 2^(R/2))`. This heuristic explodes for large R, so it is also
-  capped by the **collision memory bound**: the estimator materialises a `(B, B)` collision
-  matrix (`B²·4` bytes), giving `B_collision = √(budget / (4 · 4))` (4× safety). Without this
-  cap the `(B,B)` term is bounded only by the physics cap below, which ignores it.
+- **Collision**: cost scales as O(m²·R) per chunk, not O(B·2^R).
+  `B_train = max(512, 16 · 2^(R/2))`, rounded up to a multiple of the adaptive collision
+  chunk size `m_max`. `m_max = max(512, floor(√(budget / (R · 4 · 3))))` — the (R, m, m)
+  binding matrix in float32 with 3× safety for backward. The full batch is consumed via
+  `ceil(B / m_max)` cross-chunk pairs (no `max_chunks` cap). `resolve_batch_sizes` returns
+  `collision_chunk_size = m_max` alongside the batch sizes; it is threaded to
+  `DiscreteExactLoss` and on to `compute_collision_entropy`.
+- **KT (Kolchinsky–Tracey)**: the double loop retains every `(m,n,R)` block for backward,
+  so the retained graph is `B²·R·4` **independent of chunk** — the batch is a single tile at
+  `B = floor(√(mem_budget / (R·4·3)))`, with `collision_chunk_size = min(B, KT_TRAIN_TILE)`
+  (`KT_TRAIN_TILE = 4096`) only to keep the per-tile `torch.log` transient bounded. The tile
+  size does **not** change the retained `B²·R` (all tiles are kept for backward); a bigger tile
+  just means fewer, larger (fused) kernels → fewer launches, for an `m²·R` transient that rides
+  under the already-present `B²·R`. `compile_kt=True` `torch.compile`s the per-tile kernel. Config flag **`recompute_backward=True`**
+  gradient-checkpoints each i-chunk's contribution (`_kt_row_contribution`) so the blocks are
+  recomputed in backward, dropping the retained graph to `O(B·R)`. Memory then stops binding
+  and the **compute** does: `B = floor(√(KT_COMPUTE_BUDGET / R))` (same √(1/R) shape),
+  floored by the physics cap. `KT_COMPUTE_BUDGET` (module constant, `run.py`) defaults to 4×
+  the memory-bound work `B²R ≈ 5.3e9` ⇒ ~2× batch, ~4× step time; exact value + gradient.
+  See §06.5.
 - **Blocked Shannon**: builds `(B, 2^block_size)` histograms (default `block_size=15` →
   `2^15`), *not* `(B, 2^R)` — so it is **not** subject to the Shannon `2^R` cap (that
   misclassification pinned B to the floor of 512). `ceil(R/block_size)·n_partitions` such
   histograms are retained for backward: `B_blocked = budget / (2^block_size · ceil(R/block_size)
   · n_partitions · 4 · 4)`. Independent of R, so the physics cap below typically binds.
+  Config flag **`recompute_backward=True`** gradient-checkpoints the histogram (recomputed in
+  backward, not retained): the trailing `· 4` safety drops to `· 2`, ~doubling B for ~+20% step
+  time, exact gradients. Applies to `blocked` / `blocked_corrected` / `blocked_to_corrected`
+  (all histogram-only); **not** `annealed`, whose un-checkpointed collision `(R,B,B)` block would
+  then bind. See §06.6.
 - **proxy / mi_***: O(B·R²) or O(B·R) — no exponential or `B²` term; physics-bound.
 - **Physics bottleneck cap (all estimators)**: in the **interface model** the
   forward+backward holds *many* `(B, n_ligands, R·k_sub)` float32 tensors simultaneously —
   in `_compute_energies` (`ab`, `dist_sq`, `exp(·)`, `E_open`) and again in `p_open`
   (`log_terms_open/closed`), several retained for backward plus their gradients. The
-  retained energy graph also coexists with the collision `(B,B)` matrix during loss/backward,
+  retained energy graph also coexists with the collision `(R,m,m)` chunk during loss/backward,
   so the factor must leave headroom for that term too. A **16× safety factor** is applied:
   `B_physics = free_mem × 0.8 / (16 · n_ligands · R · k_sub · 4)` (80% of free GPU memory,
   queried via `torch.cuda.mem_get_info()`). `B_train = min(B_train, B_physics)`.
@@ -557,10 +629,21 @@ time based on array size R and entropy estimator:
   - Note `s_upper ≤ n_ligands`, so `n_ligands` is a conservative bound on the present-ligand
     axis of the energy tensor. When the presence sampler is dense (e.g. `n_presence_blocks=1`,
     large `mu_ligands_per_source`) `s_upper` saturates to `n_ligands` and the bound is tight.
-- `test_batch_size = 4 · batch_size` in all cases. Safe despite the larger value because
-  evaluation is **chunked** (`_eval_stats`): soft metrics (incl. collision `(B,B)`) run on a
-  single `chunk_size = train batch_size` pass; `test_batch_size` only drives multi-pass
-  accumulation of hard-codeword metrics.
+- **Measurement batches** (when `test_batch_size="auto"`): two sizes are returned.
+  `test_perepoch = 4 · batch_size` drives the per-epoch convergence curve (cheap, so KT's
+  O(B²) does not dominate every logged epoch); `test_final = min(2^R, memory)` is used once for
+  the closing measurement (as many samples as fit). Config field **`test_max_batch`** caps
+  `test_final` (`test_final = max(batch_size, min(test_final, test_max_batch))`) to bound the
+  O(B²) KT cost of the final test at high R **without** shrinking training or the per-epoch curve
+  An explicit `test_batch_size` (non-`"auto"`) is used for both. Evaluation is **chunked**
+  (`_eval_stats`): soft metrics run on a single `chunk_size = train batch_size` pass; the batch
+  drives multi-pass accumulation and the full-batch KT.
+- **`per_epoch_measure=False`** (light mode): `_train` skips the per-epoch `_eval_stats` entirely and
+  instead logs the training objective already computed for the gradient step (`loss`, and
+  `train_entropy = -loss` — the native entropy for entropy-maximising losses) — **free**, no extra
+  sampling. The single closing test then runs at **4×train** (regardless of `test_batch_size`/
+  `test_max_batch`). Used by `fig1/het_casc.py`: the impact_of_heteromerization figure needs only the
+  final KT bracket, and more samples can be obtained post-hoc from the saved `best_model.pt`.
 
 ---
 

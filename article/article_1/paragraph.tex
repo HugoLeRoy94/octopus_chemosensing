@@ -1,0 +1,187 @@
+\documentclass[aps,pre,twocolumn,superscriptaddress,floatfix,longbibliography]{revtex4-2}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{bm}
+\usepackage{xcolor}
+
+\begin{document}
+
+\section{Model}
+
+\begin{figure*}[!ht]
+    \centering
+    \includegraphics[width=\linewidth]{fig2/figure_composite.pdf}
+    \caption{\label{fig:env}Pipeline for estimating the mutual information of the array.
+    \textbf{(A)} Two-dimensional UMAP projection of the $D$-dimensional
+    morphochemical latent space. Ligands (dots) are colored by chemical family,
+    receptors (open circles) are numbered. The affinity of a receptor for a
+    ligand is set by their distance $d = \|\mathbf{v}_u - \mathbf{v}_\ell\|$
+    (red arrow).
+    \textbf{(B)} Activation threshold $c^*$ as a function of $d$, saturating
+    between $c^*_\text{min}$ at complete match and $c^*_\text{max}$ at complete
+    mismatch.
+    \textbf{(C)} Monte Carlo loop. The environment draws the per-receptor
+    threshold vector $\mathbf{c}^*_{\mathbf{r},\ell}$ over the $L$ ligands and a
+    mixture $\mathbf{c} = (n_1 c_1,\dots,n_L c_L)$, with presence
+    $n_\ell \sim \text{Bernoulli}(p)$ and concentration
+    $c_\ell \sim \text{LogNormal}(\mu,\sigma)$. The physics step turns this into
+    a binary activation pattern $A = (1,0,\dots,1)$. Repeating over sensing
+    events builds the empirical distribution $p(A)$, from which the mutual
+    information $I(A;(\mathbf{c},\{\ell\})) = H(A)$ is computed. The receptor
+    vectors $\{\mathbf{v}_u\}$ are then optimized to maximize it.   }
+\end{figure*}
+
+{\color{red}
+The biological role of an array of sensory receptors is to sense a wide
+variety of ligands over a wide range of concentrations. Chemosensitive
+systems such as olfaction achieve this through gene expansion, which
+generates a diverse repertoire of receptors, each one sensitive to different
+chemicals~\cite{valencia-montoya_evolution_2024}. The combined activation of
+the array defines a code between the input, namely the identity $\ell$ and
+concentration $c$ of the ligands, and the binary response of the $N$ receptors, which we call the activation pattern $A$. 
+To study the coding capacity of an array of
+chemotactile receptors, we place ourselves upstream of any processing of the signal. Probing a complete olfactome experimentally would require testing
+thousands of additional ligands~\cite{mainland_human_2015, munch_door_2016},
+so we instead simulate an array of chemotactile receptors, heteromers
+included, and compute its coding capacity.
+}
+
+Following the standard approach for evaluating the coding capacity of a
+receptor array~\cite{fonollosa_quality_2012, del_castillo_convergent_2026}, we
+quantify it through the mutual information (MI) between the activation pattern
+and the input,
+\begin{equation}
+    I\bigl(A;(c,\ell)\bigr) = H(A) - H(A \mid c,\ell),
+\end{equation}
+where $H(A) = -\sum_{A\in\mathbb{A}} p(A)\log p(A)$ is the entropy of the activation pattern
+and the mutual information is expressed in bits. We work in the limit of
+noiseless receptors, so that $A$ follows deterministically from $(c,\ell)$.
+The conditional entropy $H(A \mid c,\ell)$ then vanishes and the mutual
+information reduces to the entropy $H(A)$ of the activation pattern under a
+given environment.
+
+{\color{blue}
+Maximizing $H(A)$ is an instance of the infomax
+principle~\cite{bell_information-maximization_1995}, under which information
+transfer through a noiseless nonlinear channel is maximized by maximizing the
+output entropy. Intuitively, $H(A)$ quantifies how much an organism can measure
+about its environment from the activation pattern alone. MI grows with the
+number of distinct activation patterns and decreases with the number of
+redundant codes, meaning inputs that map to the same pattern and are therefore
+indistinguishable to the organism. In the ideal case, all the possible activation patterns are used for a distinct input , which maximizes the entropy up to $H(A) = R$, the number of
+receptors.
+}
+
+For such an array to operate optimally, it is well established that its
+receptors must be promiscuous, each one active for about half of the
+ligands, and mutually uncorrelated~\cite{zwicker_receptor_2016,
+fonollosa_quality_2012}. Heteromerization greatly expands the combinatorial
+family of receptors, but the subunits shared between receptors also make their
+responses chemically coupled, and therefore correlated. Whether this coupling
+brings additional information or only redundant information is not obvious a
+priori. To address this question, we simulate the response of an array to
+random sampled ligands.
+
+We first build a physical model of the receptor by extending the
+Monod-Wyman-Changeux model of ligand-gated ion channels to heteromers \cite{einav_monod-wyman-changeux_2017}. This
+model relates the opening probability of a heteromeric receptor to that of its
+homomeric counterparts through the affinities of its constituent subunits for
+the ligand, as detailed in the
+supplementary material. Because an allosteric channel behaves as a logarithmic
+sensor~\cite{olsman_allosteric_2016}, the activation threshold $c^*$ is set on
+a logarithmic concentration scale, and the receptor activates once the ligand
+concentration exceeds this threshold.
+
+We next design an environment that reproduces random encounters with ligands.
+Previous information theoretic models of olfaction do include correlations in
+the environment, but only in the concentration and joint occurrence of
+ligands~\cite{zwicker_receptor_2016, tesileanu_adaptation_2019}, leaving the
+underlying chemistry unstructured and drawing receptor affinities
+independently. This is insufficient for our purpose because of a property
+specific to heteromers. Receptors that share a subunit respond in a coupled
+way, and this coupling, which is the signature of heteromerization, produces
+systematic redundancy only when the chemistry of the environment is itself
+correlated. We therefore need a realistic morphochemical environment in which
+chemically similar ligands occupy nearby regions of chemical space.
+
+We represent the combined morphological and chemical properties of ligands and
+binding pockets as vectors embedded in a Euclidean space, denoted
+$\mathbf{v}_\ell$ and $\mathbf{v}_u$ respectively and shown in
+Fig.~\ref{fig:env}\textbf{A}. Such a Euclidean morphochemical space was first
+introduced in the context of immunology~\cite{perelson_theoretical_1979} and
+is supported by empirical embeddings of odor space~\cite{lee_principal_2023,
+wu_learning_2018}. The activation threshold $c^*$ rises smoothly with the
+latent distance $d = \|\mathbf{v}_u - \mathbf{v}_\ell\|$, as shown in
+Fig.~\ref{fig:env}\textbf{B}, and saturates between a lower bound
+$c^*_\text{min}$ reached at perfect match and an upper bound $c^*_\text{max}$
+reached at complete mismatch. This saturating shape is the natural form for a
+distribution of binding constants governed by subsite
+complementarity~\cite{lancet_probability_1993}, and we implement it as a
+Gaussian radial basis kernel (supplementary material).
+
+For each sensing event we draw a mixture of ligands, using a Bernoulli mask
+for their presence and lognormal values for their concentrations $\mathbf{c}$,
+and pass this mixture through the activation curve to read out a binary
+activation pattern $A$. Iterating this Monte Carlo loop yields the empirical
+distribution $p(A)$ shown in Fig.~\ref{fig:env}\textbf{C}, from which we
+estimate the mutual information. To model how evolution tuned the chemistry of
+the receptors to their environment, we optimize the subunit vectors
+$\mathbf{v}_u$ so as to maximize the mutual information of the
+array~\cite{tesileanu_adaptation_2019, zwicker_receptor_2016}.
+
+Within this framework we can generate random environments of arbitrary
+complexity. In fact, we identify a regime of parameters in which our results
+become independent of the precise environmental parameters (for details on
+the generation of $\mathbf{v}_\ell$, see supplementary material). To
+ensure that any difference in mutual information between homomers and
+heteromers reflects a property of the array rather than of the environment, we
+work in a regime where homomers behave as a perfect
+array~\cite{zwicker_receptor_2016}. In this regime the environment does not
+limit MI, so that any residual difference is a genuine
+characteristic of the receptor array itself. We then compute the mutual information
+averaged over many environments, for a growing number of encoding genes and
+increasing degrees of heteromerization, as reported in Fig.~\ref{fig:MI}.
+
+Figure~\ref{fig:MI} shows that the mutual information increases with the
+heteromerization index, which establishes heteromerization as a viable
+strategy for expanding the coding capacity of the array. Two limitations
+nonetheless appear. First, the gain decreases as the heteromerization index
+grows. Second, expanding the genetic pool to expand receptors' diversity, rather than heteromerization, the MI increases even more.
+%at a fixed number of receptors, heteromerization is less effective than gene expansion, as shown in the supplementary material.
+
+{\color{blue}
+The first limitation reflects the growing redundancy between receptors as the
+heteromerization index increases. In the language of partial information
+decomposition~\cite{williams_nonnegative_2010}, the information contributed by
+a heteromer that combines many genes becomes increasingly redundant with the
+information already carried by heteromers that combine fewer genes. As a
+concrete case, the response of a heteromer built from three genes is almost
+entirely reconstructible from the set of all receptors built from two genes,
+so its unique and synergistic contribution, which is the part that actually
+raises $H(A)$, becomes small. The second limitation is expected, because
+heteromers are correlated by construction, and a correlated array cannot match
+the performance of a perfect array.
+}
+
+
+\begin{figure}
+    \centering
+    \includegraphics[width=\linewidth]{impact_of_heteromerization.pdf}
+    \caption{\label{fig:MI}Mutual information (MI) between the activation pattern and the input, versus the number of encoding genes
+    $n_\text{genes}$ for a growing heteromerization index $R/n_\text{genes}$
+    ($R$ the number of receptors). $R/n_\text{genes}\approx1$ is gene
+    expansion, one gene per receptor. 
+    %Solid lines are simulated arrays (bands: spread across environments), dashed lines the perfect homomer array with the same $R$. 
+    MI grows with the heteromerization index, but the gain per
+    level decays and stays below the perfect reference.
+    Error bars grow with $R$ because the phase space of $\mathbb{A}$ scales as $2^R$, making the exact entropy intractable.
+    We bracket the Shannon entropy between two bounds : solid lines correspond to an upper-bounded estimate, whereas the dotted lines correspond to a lower-bound, see supplementary material for details.}
+    %, so we bracket it between two bounds from pairwise distances between per-event activation distributions~\cite{kolchinsky_estimating_2017}. See supplementary material.}
+\end{figure}
+
+\bibliographystyle{apsrev4-2}
+\bibliography{smelling}
+
+\end{document}
