@@ -1,0 +1,527 @@
+\documentclass[aps,pre,superscriptaddress,floatfix,longbibliography]{revtex4-2}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{bm}
+\usepackage{graphicx}
+
+\begin{document}
+
+\title{Supplementary Material}
+
+\maketitle
+
+\section{Monod-Wyman-Changeux model for heteromeric receptors}
+\label{sec:mwc}
+
+The single-channel opening probability used in the main text extends the
+Monod-Wyman-Changeux (MWC) treatment of ligand-gated ion channels of
+Ref.~\cite{einav_monod-wyman-changeux_2017}, which derives the opening curve
+of a homomeric channel.%, all $k_\text{sub}$ subunits identical. 
+Our
+receptors are heteromers: a ring of $k_\text{sub}$ subunits
+$r=(u_1,\dots,u_{k_\text{sub}})$, each drawn from a pool of $n_\text{genes}$
+possible gene products and chemically distinct in general. The ligand does not bind an isolated
+subunit but the pocket formed at the interface between two
+neighbouring subunits (Fig.~\ref{fig:pentamer}). Each subunit is structurally
+asymmetric, presenting two different faces to its two neighbours. We label
+them "$+$" and "$-$". The ring therefore has exactly $k_\text{sub}$ pockets,
+pocket $i$ formed by the "$+$" face of $u_i$ meeting the "$-$" face of
+$u_{i+1}$. Because the two faces of a subunit
+are chemically distinct, the pocket formed by $(u_i^+,u_j^-)$ is generally
+not the same as the one formed by $(u_j^+,u_i^-)$, see Fig.~\ref{fig:pentamer}. For a given pair of
+subunit species there are two possible pocket types, depending on which one
+contributes its "$+$" face. Because the reference does not itself treat
+heteromers or interfacial pockets, we derive the model below.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.6\linewidth]{figure/pentamer_formula.pdf}
+\caption{Heteropentameric receptor ring, subunits shown with their two
+structurally distinct faces. Each of the ligand pockets sits
+at the interface between the "$+$" face of one subunit and the "$-$" face of its neighbour.
+As a result, homopentamer have only one type of pocket (left-hand side), whereas heteropentamer have two types of pockets (right-hand side). }
+\label{fig:pentamer}
+\end{figure}
+
+\paragraph{Binding energy and dissociation constant.} For pocket $i$ in
+conformation $\alpha\in\{o,c\}$, ligand binding is the reaction
+$P_i^\alpha + L \rightleftharpoons P_i^\alpha L$, with dissociation constant
+$K_\alpha^{(i,\ell)} = [P_i^\alpha][L]/[P_i^\alpha L]$. Each species'
+equilibrium concentration is set by its Boltzmann weight,
+$[s]\propto e^{-\beta E_s}$, so
+\begin{equation}
+K_\alpha^{(i,\ell)} = \frac{e^{-\beta E(P_i^\alpha)}\,e^{-\beta E(L)}}{e^{-\beta E(P_i^\alpha L)}}
+= e^{\beta \Delta E_\alpha^{(i,\ell)}},
+\qquad
+\Delta E_\alpha^{(i,\ell)} \equiv E(P_i^\alpha L) - E(P_i^\alpha) - E(L),
+\label{eq:K_from_E}
+\end{equation}
+i.e. the dissociation constant is set by the binding free energy
+$\Delta E_\alpha^{(i,\ell)}$ of the ligand to that specific pocket (we set
+$\beta=1$, energies in units of $k_BT$, throughout). It is this energy,
+rather than $K_\alpha^{(i,\ell)}$ itself, that we later parametrize directly
+in the latent space (Sec.~\ref{sec:kernel}).
+
+\paragraph{Derivation.} The channel is a two-state allosteric system: it is
+found either fully open ($C_o$) or fully closed ($C_c$), with intrinsic
+(ligand-free) energies $E_o$ and $E_c$. We set $E_o=0$ and write
+$\epsilon_r = E_c-E_o$ for the leakiness. Within either conformation
+$\alpha$, ligand binds each of the $k_\text{sub}$ pockets independently, so
+pocket $i$ is either empty (statistical weight $1$) or ligand-bound (weight
+$c/K_\alpha^{(i,\ell)}$). Summing over the $2^{k_\text{sub}}$
+ligand-occupancy microstates of conformation $\alpha$ then factorizes into a
+product over the independent pockets, the conformation's binding polynomial:
+\begin{equation}
+Z_\alpha(c,\ell) = \prod_{i=1}^{k_\text{sub}}\left(1+\frac{c}{K_\alpha^{(i,\ell)}}\right).
+\label{eq:binding_poly}
+\end{equation}
+For a homomer, all pockets are chemically identical and
+Eq.~\eqref{eq:binding_poly} collapses to the usual $(1+c/K_\alpha)^{k_\text{sub}}$
+form of Ref.~\cite{einav_monod-wyman-changeux_2017}. For a heteromer the
+pockets differ and the product must be kept in full. This is where the sum
+of individual pocket interaction energies enters the model. Weighting each
+conformation's branch by its Boltzmann factor, the opening probability is the
+fraction of the total statistical weight found open,
+\begin{equation}
+p_o^{(r,\ell)}(c) = \frac{Z_o(c,\ell)}{Z_o(c,\ell) + e^{-\epsilon_r} Z_c(c,\ell)}
+= \frac{\prod_{i=1}^{k_\text{sub}} (1+c/K_o^{(i,\ell)})}{\prod_{i=1}^{k_\text{sub}} (1+c/K_o^{(i,\ell)}) + e^{-\epsilon_r}\prod_{i=1}^{k_\text{sub}}(1+c/K_c^{(i,\ell)})},
+\label{eq:po_heteromer}
+\end{equation}
+which is the heteromeric extension used in the main text.
+
+\paragraph{Rescaled affinity $\tilde K_o$.} Fitting Eq.~\eqref{eq:po_heteromer}
+directly is degenerate: Ref.~\cite{einav_monod-wyman-changeux_2017} shows, via
+the Hessian of $p_o$ with respect to $(\epsilon_r,\Delta E_o,\Delta E_c)$,
+that one eigendirection is far softer ("sloppy") than the other two, so that
+dose-response data alone cannot separate $\epsilon_r$ from $K_o$. Only the
+combination $e^{-\epsilon_r/2}K_o$ is identifiable. We therefore absorb the
+leakiness into a rescaled open-state affinity rather than carry $\epsilon_r$
+as an independent parameter. Distributing $\epsilon_r=\sum_{i=1}^{k_\text{sub}}\epsilon_i$
+evenly among the $k_\text{sub}$ pockets in log space,
+\begin{equation}
+\tilde K_o^{(i,\ell)} = K_o^{(i,\ell)}\, e^{-\epsilon_r/k_\text{sub}},
+\qquad\text{so that}\qquad
+e^{-\epsilon_r}\prod_{i=1}^{k_\text{sub}} K_o^{(i,\ell)} = \prod_{i=1}^{k_\text{sub}} \tilde K_o^{(i,\ell)},
+\end{equation}
+and keeping only the identifiable, non-sloppy combination reduces
+Eq.~\eqref{eq:po_heteromer} to
+\begin{equation}
+p_o^{(r,\ell)}(c) = \frac{\prod_{i=1}^{k_\text{sub}} (c/\tilde K_o^{(i,\ell)})}{\prod_{i=1}^{k_\text{sub}}(c/\tilde K_o^{(i,\ell)}) + \prod_{i=1}^{k_\text{sub}}(1+c/K_c^{(i,\ell)})}.
+\label{eq:po_rescaled}
+\end{equation}
+$\tilde K_o^{(i,\ell)}$, not $K_o^{(i,\ell)}$ and $\epsilon_r$ separately, is
+therefore the physically meaningful open-state affinity of pocket $i$, and is
+what we use throughout.
+
+\paragraph{Threshold reduction.} We further reduce
+Eq.~\eqref{eq:po_rescaled} to a strict activation threshold, the
+half-activation concentration $c^*$ at which $p_o=1/2$. This is a choice
+of parsimony rather than a claim about receptor physics: it removes the
+closed-state affinities $K_c^{(i,\ell)}$ from the model entirely, leaving a
+single free affinity per pocket-ligand pair, the minimal parametrization
+needed to give each pocket a tunable, combinable threshold.
+
+To see why $K_c^{(i,\ell)}$ drops out, set $p_o(c^*)=1/2$ in
+Eq.~\eqref{eq:po_rescaled}, which requires the two branches to balance,
+\begin{equation}
+\prod_{i=1}^{k_\text{sub}} \frac{c^*}{\tilde K_o^{(i,\ell)}} = \prod_{i=1}^{k_\text{sub}} \left(1+\frac{c^*}{K_c^{(i,\ell)}}\right).
+\label{eq:balance}
+\end{equation}
+A functional ion channel is "good" in the MWC sense: the closed conformation
+barely binds the ligand, $K_c^{(i,\ell)} \gg K_o^{(i,\ell)}$ for every
+pocket. Since the threshold itself sits at the scale of the open-state
+affinities, $c^*\sim\tilde K_o^{(i,\ell)} \ll K_c^{(i,\ell)}$, each factor on
+the right-hand side of Eq.~\eqref{eq:balance} is close to its ligand-free
+value, $1+c^*/K_c^{(i,\ell)} \approx 1$, and the right-hand side reduces to
+$1$. Eq.~\eqref{eq:balance} then gives $(c^*)^{k_\text{sub}} =
+\prod_{i=1}^{k_\text{sub}}\tilde K_o^{(i,\ell)}$, i.e. the threshold
+$c^*_{r,\ell}$ is the geometric mean of the pockets' rescaled affinities,
+\begin{equation}
+c^*_{r,\ell} = \Bigl(\prod_{i=1}^{k_\text{sub}} \tilde K_o^{(i,\ell)}\Bigr)^{1/k_\text{sub}}
+\;\;\Longleftrightarrow\;\;
+\ln c^*_{r,\ell} = \frac{1}{k_\text{sub}}\sum_{i=1}^{k_\text{sub}} E_o^{(i,\ell)},
+\qquad E_o^{(i,\ell)} \equiv \ln\tilde K_o^{(i,\ell)},
+\label{eq:ec50}
+\end{equation}
+with the receptor activating once $c$ exceeds this threshold.
+
+\section{Saturating affinity kernel}
+\label{sec:kernel}
+
+Section~\ref{sec:mwc} leaves $E_o^{(i,\ell)}$, the open-state binding energy
+of pocket $i$, unspecified. We now give it a concrete form in the
+morphochemical latent space introduced in Fig.~1\textbf{A} of the main text,
+in a way that respects the two-face asymmetry of Sec.~\ref{sec:mwc}.
+
+\paragraph{Two chemistries per subunit.} A ligand $\ell$ carries a fixed
+latent coordinate $\mathbf v_\ell\in\mathbb R^D$. Because a subunit's "$+$"
+and "$-$" faces make chemically distinct contacts (Fig.~\ref{fig:pentamer}),
+a single latent vector per subunit cannot represent both: subunit $u$ is
+instead assigned two independent latent coordinates, $\mathbf v_u^+$ and
+$\mathbf v_u^-\in\mathbb R^D$, one per face-chemistry, each with its own pair
+of learnable energy parameters $(E_\text{base}^{u,+},E_\text{max}^{u,+})$ and
+$(E_\text{base}^{u,-},E_\text{max}^{u,-})$ — the meaning of these parameters
+is given below.
+
+\paragraph{Pocket embedding.} Pocket $i$, formed by the "$+$" face of $u_i$
+meeting the "$-$" face of $u_{i+1}$ (Sec.~\ref{sec:mwc}), inherits a
+chemistry that is a combination of the two contributing faces. We represent
+it by the midpoint of their latent coordinates and of their energy
+parameters,
+\begin{equation}
+\mathbf v_i = \tfrac{1}{2}\bigl(\mathbf v_{u_i}^{+} + \mathbf v_{u_{i+1}}^{-}\bigr),
+\qquad
+E_\text{base}^{(i)} = \tfrac{1}{2}\bigl(E_\text{base}^{u_i,+} + E_\text{base}^{u_{i+1},-}\bigr),
+\qquad
+E_\text{max}^{(i)} = \tfrac{1}{2}\bigl(E_\text{max}^{u_i,+} + E_\text{max}^{u_{i+1},-}\bigr).
+\label{eq:pocket_embed}
+\end{equation}
+Averaging keeps the pocket's descriptors in the same $D$-dimensional space as
+a single face, so the ligand kernel below needs only one distance per
+pocket; the average is taken \emph{before} the kernel is applied (Eq.~\eqref{eq:Eo_kernel} below), not after, since the kernel is nonlinear in
+$\mathbf v_i$.
+
+\paragraph{Kernel.} The open-state binding energy of pocket $i$ for ligand
+$\ell$ is a Gaussian radial basis function (RBF) of the latent distance
+$d_i = \|\mathbf v_i - \mathbf v_\ell\|$,
+\begin{equation}
+E_o^{(i,\ell)} = E_\text{base}^{(i)} + E_\text{max}^{(i)}\left(1-\exp\!\left(-\frac{d_i^2}{\lambda^2}\right)\right),
+\label{eq:Eo_kernel}
+\end{equation}
+with $\lambda$ a single length scale shared by every pocket (a fixed
+hyperparameter, not learned), while $E_\text{base}^{(i)}$ and
+$E_\text{max}^{(i)}$ inherit the per-face learnable parameters through
+Eq.~\eqref{eq:pocket_embed}. In terms of the threshold $c^*$ of
+Sec.~\ref{sec:mwc}, $\ln c^*_\text{min}\equiv E_\text{base}^{(i)}$ is the
+threshold at perfect match ($d_i=0$) and $\ln c^*_\text{max}\equiv
+E_\text{base}^{(i)}+E_\text{max}^{(i)}$ is the threshold reached as
+$d_i\to\infty$: $c^*$ therefore rises smoothly between these two bounds as
+the ligand moves away from the pocket's optimum, saturating rather than
+diverging, since a fully mismatched ligand should incur a bounded, not
+unbounded, energetic penalty; for $d_i\ll\lambda$, Eq.~\eqref{eq:Eo_kernel}
+reduces to the harmonic form $E_o^{(i,\ell)}\approx E_\text{base}^{(i)} +
+(E_\text{max}^{(i)}/\lambda^2)\,d_i^2$.
+
+Combined with Eq.~\eqref{eq:ec50}, the heteromer's activation threshold is
+\begin{equation}
+\ln c^*_{r,\ell} = \frac{1}{k_\text{sub}}\sum_{i=1}^{k_\text{sub}}
+\left[E_\text{base}^{(i)} + E_\text{max}^{(i)}\left(1-\exp\!\left(-\frac{d_i^2}{\lambda^2}\right)\right)\right],
+\end{equation}
+so that a heteromer's threshold for a given ligand is set jointly by how
+well that ligand matches each of its $k_\text{sub}$ interfacial pockets.
+Fig.~\ref{fig:env}\textbf{B} shows the shape of $c^*$ as a function of the
+latent distance $d$ that this kernel produces at the single-pocket level,
+saturating between $c^*_\text{min}$ and $c^*_\text{max}$ as derived above.
+
+\section{Generation of the environment and the simulation loop}
+\label{sec:env}
+
+\begin{figure}
+    \includegraphics[width=1.\linewidth]{../paragraph/fig2/figure_composite.pdf}
+    \caption{\label{fig:env}Pipeline for estimating the mutual information of the array.
+    \textbf{(A)} Two-dimensional UMAP projection of the $D$-dimensional
+    morphochemical latent space. Ligands (dots) are colored by chemical family,
+    receptors (open circles) are numbered. The affinity of a receptor for a
+    ligand is set by their distance $d = \|\mathbf{v}_u - \mathbf{v}_\ell\|$
+    (red arrow).
+    \textbf{(B)} Activation threshold $c^*$ as a function of $d$, saturating
+    between $c^*_\text{min}$ at complete match and $c^*_\text{max}$ at complete
+    mismatch.
+    \textbf{(C)} Monte Carlo loop. The environment draws the per-receptor
+    threshold vector $\mathbf{c}^*_{\mathbf{r},\ell}$ over the $L$ ligands and a
+    mixture $\mathbf{c} = (n_1 c_1,\dots,n_L c_L)$, with presence
+    $n_\ell \sim \text{Bernoulli}(p)$ and concentration
+    $c_\ell \sim \text{LogNormal}(\mu,\sigma)$. The physics step turns this into
+    a binary activation pattern $A = (1,0,\dots,1)$. Repeating over sensing
+    events builds the empirical distribution $p(A)$, from which the mutual
+    information $I(A;(\mathbf{c},\{\ell\})) = H(A)$ is computed. The receptor
+    vectors $\{\mathbf{v}_u\}$ are then optimized to maximize it.}
+\end{figure}
+
+\paragraph{Fixed pool.} $n_\text{families}$ family prototypes are placed in
+latent space with a target average inter-family distance $d_\text{fam}$.
+$L$ ligands are then drawn once around their family's prototype,
+$\mathbf v_\ell \sim \mathcal N(\mathbf v_f,\sigma_\text{shape})$, together
+with per-ligand log-concentration parameters $(\mu_{c,\ell},\sigma_{c,\ell})$.
+Fig.~\ref{fig:env}\textbf{A} shows this latent space, with ligands colored by
+family and receptors placed among them. This fixed pool, together with the
+kernel length scale $\lambda$ of Sec.~\ref{sec:kernel}, is the full set of
+parameters defining the environment, summarized in Table~\ref{tab:env_params}.
+
+\begin{table}[t]
+\centering
+\begin{tabular}{ll}
+Symbol & Meaning \\
+\hline
+$L$ & number of ligands in the fixed pool \\
+$n_\text{families}$ & number of chemical families \\
+$D$ & latent space dimension \\
+$\sigma_\text{shape}$ & intra-family spread \\
+$d_\text{fam}$ & average inter-family distance \\
+$\mu_S$ & mean number of ligands per sniff \\
+$(\mu_{c,\ell},\sigma_{c,\ell})$ & log-concentration mean and spread of ligand $\ell$ \\
+$\sigma_\text{noise}$ & observation noise \\
+$\lambda$ & kernel length scale (Sec.~\ref{sec:kernel}) \\
+\end{tabular}
+\caption{Parameters defining the environment. Used in Sec.~\ref{sec:perfect}
+to specify the regime in which the results are reported.}
+\label{tab:env_params}
+\end{table}
+
+\paragraph{Sensing event.} At each sensing event, the number of ligands
+present, $S$, is drawn from a zero-truncated Poisson distribution with rate
+$\mu_S$, restricted to the pool size,
+\begin{equation}
+P(S=s) = \frac{\mu_S^s/s!}{\sum_{k=1}^{L}\mu_S^k/k!}, \qquad s=1,\dots,L,
+\label{eq:ztp}
+\end{equation}
+so that every sniff contains at least one ligand and the mean sniff size is
+set by $\mu_S$. Given $S$, the $S$ present ligands are chosen uniformly at
+random, without replacement, from the pool of $L$, which we encode as a
+presence mask $M=(M_1,\dots,M_L)\in\{0,1\}^L$, $M_\ell=1$ if ligand $\ell$ is
+among the $S$ chosen, $0$ otherwise, so $\sum_\ell M_\ell = S$. Each present
+ligand draws its own concentration, $c_\ell\sim\text{LogNormal}(\mu_{c,\ell},\sigma_{c,\ell})$,
+and its own observation noise, $\mathbf v_{\text{obs},\ell}\sim\mathcal
+N(\mathbf v_\ell,\sigma_\text{noise})$ with $\sigma_\text{noise}\ll\sigma_\text{shape}$,
+representing docking or thermal fluctuations around its fixed pool
+coordinate.
+
+This mask carries no structure linking which particular ligands co-occur,
+beyond the constraint that exactly $S$ of them are present. Other models of
+the olfactory environment make the opposite choice and build in such
+structure: through joint-occurrence correlations in
+Refs.~\cite{zwicker_receptor_2016,tesileanu_adaptation_2019}, or through
+explicit shared odor sources in Ref.~\cite{del_castillo_convergent_2026}. We
+omit this here to keep the number of free environment parameters small.
+
+\paragraph{Fixed versus optimized.} The environment of
+Table~\ref{tab:env_params} is sampled once and held fixed throughout
+training. The only quantities updated by gradient descent are the receptor
+chemistry of Sec.~\ref{sec:kernel}: the per-face latent coordinates
+$\mathbf v_u^{+},\mathbf v_u^{-}$ and energy parameters
+$E_\text{base}^{u,\pm},E_\text{max}^{u,\pm}$ of every unit $u$, updated to
+maximize the array's mutual information (main text). Fig.~\ref{fig:env}\textbf{C}
+summarizes the resulting pipeline: the environment and the physics of
+Secs.~\ref{sec:mwc} and \ref{sec:kernel} generate the activation pattern $A$ for
+each sensing event, repeated sensing events build the empirical distribution
+$p(A)$ from which $H(A)$ is estimated, and the receptor coordinates
+$\{\mathbf v_u^{\pm}\}$ are updated to maximize it.
+
+\paragraph{From single-ligand threshold to mixture drive.}
+Sec.~\ref{sec:mwc} defines activation for a single ligand as a hard
+threshold, $A_r=\Theta(\ln c-\ln c^*_{r,\ell})$. In a mixture, ligands
+compete for the same receptor, and each contributes to activation in
+proportion to how far its concentration sits above its own threshold,
+$c_\ell/c^*_{r,\ell}$. Summing these occupancy ratios over the present
+ligands defines the receptor's drive,
+\begin{equation}
+\text{drive}_r(\{c_\ell\}) = \sum_{\ell:\,M_\ell=1} \frac{c_\ell}{c^*_{r,\ell}}.
+\label{eq:drive}
+\end{equation}
+This generalizes the single-ligand rule: half-activation is reached exactly
+when $\text{drive}_r=1$, which reduces to $c=c^*_{r,\ell}$ for a single ligand.
+
+\paragraph{Soft binning.} The hard threshold $\Theta$ has zero gradient
+almost everywhere and cannot be optimized by backpropagation. We replace it
+by a temperature-scaled sigmoid of the log-drive,
+\begin{equation}
+p(r\mid\{c_\ell\}) = \sigma\!\left(\frac{\ln\,\text{drive}_r(\{c_\ell\})}{T}\right).
+\label{eq:soft_bin}
+\end{equation}
+Evaluating $\ln\,\text{drive}_r$ directly from Eq.~\eqref{eq:drive} is
+numerically unstable: the ratios $c_\ell/c^*_{r,\ell}$ can span many
+orders of magnitude, since concentrations are log-normally distributed and
+$c^*_{r,\ell}$ ranges between $c^*_\text{min}$ and $c^*_\text{max}$, so summing
+them directly in floating point can overflow or silently underflow the
+smallest terms to zero. We instead compute the equivalent logsumexp form,
+\begin{equation}
+\ln\,\text{drive}_r(\{c_\ell\}) = \ln\sum_{\ell:\,M_\ell=1} \exp\bigl(\ln c_\ell - \ln c^*_{r,\ell}\bigr),
+\label{eq:logsumexp}
+\end{equation}
+which factors out the largest term before exponentiating the rest, so every
+exponentiated term stays of order $1$ or smaller and the sum is computed at
+the working numerical precision. $T$ is annealed during training, from an
+initial value down to a small target value. In the limit $T\to0$,
+Eq.~\eqref{eq:soft_bin} goes to the discrete binary activation model defined
+in the main text, $p(r\mid\{c_\ell\})\to A_r\in\{0,1\}$.
+
+\section{The perfect-array regime}
+\label{sec:perfect}
+
+$H(A)$ can depend on every environment parameter of Table~\ref{tab:env_params}
+and on $R$ itself. A direct comparison between homomer and heteromer arrays
+is only meaningful in a regime where it does not. We look for a window of
+parameter values in which $H(A)$ stops changing with their precise value.
+Inside this window the homomer array reaches its architectural ceiling,
+$H(A)=R$. We call such an array perfect.
+
+In this same window, with the same environment and the same fitting
+procedure, heteromer arrays fall short of $R$ (main text). This is the
+point of the window. Since the homomer array already reaches $R$ throughout
+it, neither the environment nor the optimization can explain a heteromer
+shortfall. Any gap measured between heteromer and homomer arrays of the
+same $R$ is therefore a property of the heteromeric array itself, its
+subunit-sharing correlations (Sec.~\ref{sec:mwc}), not an artifact of the
+environment or of how it is fit.
+
+Even for the homomer array, $H(A)$ can fail to reach $R$ outside this
+window, for three distinct reasons.
+
+\begin{itemize}
+\item \textbf{Statistical.} $A$ is a deterministic, noiseless function of
+the mixture (Sec.~\ref{sec:env}), so $H(A)\le H(\text{mixture})$: a
+deterministic map cannot create entropy. If the mixture carries little
+entropy, too sparse or too few ligands, $H(\text{mixture})$ binds before
+$R$ does.
+\item \textbf{Geometric.} Reaching $H(A)=R$ needs $R$ receptors that
+realize $R$ mutually decorrelated, half-active dichotomies of the ligand
+pool. Whether they can is a question about the expressive capacity of the
+receptor family in $D$ dimensions, not about $H(\text{mixture})$.
+\item \textbf{Numerical.} The first two mechanisms are properties of the
+physical model. The gradient-based procedure of Sec.~\ref{sec:env} can
+separately fail to reach or measure $H(A)=R$, usually for reasons of
+computational cost.
+\end{itemize}
+
+Table~\ref{tab:param_windows} lists, for each parameter, the range over
+which $H(A)=R$ holds, and which mechanism bounds it.
+
+\begin{table}[t]
+\centering
+\begin{tabular}{p{2.2cm}p{2.6cm}p{5.2cm}p{2.0cm}}
+Parameter & Range & Justification & Mechanism \\
+\hline
+$\mu_S,\,L$ & not too small & Too sparse or too few ligands caps
+$H(\text{mixture})$ below $R$. & Statistical \\[6pt]
+$\rho=\dfrac{\sigma_\text{shape}\sqrt{D}}{\lambda}$ & $\sim[0.2,1]$ &
+Below: ligands within a family share one receptor's ball. Above: each ball
+covers at most one ligand. & Geometric \\[6pt]
+$d_\text{fam}/\lambda$ & $\sim[0.5,1.5]$ & Below: neighbouring families'
+balls overlap. Above: no ball bridges families. & Geometric \\[6pt]
+$D$ & no upper bound & Larger $D$ never hurts capacity, only costs memory
+and parameters. We use the smallest $D$ satisfying the $\rho$,
+$d_\text{fam}/\lambda$ windows above. & Numerical \\
+\end{tabular}
+\caption{Parameter windows for the perfect-array regime
+(Sec.~\ref{sec:perfect}).}
+\label{tab:param_windows}
+\end{table}
+
+The geometric mechanism is a capacity question, classically studied for
+linear classifiers, hyperplanes~\cite{cover_geometrical_1965}. The VC
+dimension of a hyperplane in $\mathbb{R}^D$ is $D+1$: any $D+1$ points in
+general position can be split into any of their $2^{D+1}$ dichotomies, but
+this guarantee is lost beyond $D+1$ points.
+
+Our receptors are not hyperplanes. Through the Gaussian kernel of
+Sec.~\ref{sec:kernel}, each is a ``ball'' classifier: it responds to
+ligands within roughly $\lambda$ of its position, not to one side of a
+plane. Kernel classifiers of this kind are generally less constrained by
+the ambient dimension than a hyperplane is. A nonlinear kernel implicitly
+maps the ligands into a much higher, for a Gaussian kernel effectively
+infinite, dimensional feature space, where separating them is easier. This
+is the same reasoning Cover used to motivate feature expansion in the
+first place.
+
+The hyperplane bound is therefore a conservative reference point, not a
+tight limit for our receptors. What we keep from the comparison is the
+direction of the effect: increasing $D$ can only make the classifier at
+least as capable, never less. This is why the smallest $D$ consistent with
+the $\rho$ and $d_\text{fam}/\lambda$ windows costs nothing in capacity.
+
+\section{Bracketing the joint Shannon entropy}
+\label{sec:entropy}
+
+Exact evaluation of $H(A) = -\sum_A p(A)\log_2 p(A)$ requires enumerating
+all $2^R$ activation patterns. Estimating $p(A)$ reliably from $B$ samples
+needs roughly one sample per pattern, $B\sim2^R$, and the intermediate
+tensor built from these samples has $(2^R)^2=2^{2R}$ entries. At float32
+precision this is $2^{2R+2}$ bytes. At $R=15$ this is $2^{32}$ bytes,
+$4$ GiB, comfortable on an 80 GB A100. Each additional receptor quadruples
+it. By $R=18$, three receptors later, it is $2^{38}$ bytes, $256$ GiB,
+beyond any single GPU. We therefore need an estimator that does not
+enumerate $2^R$ patterns once $R$ grows past the high teens.
+
+The object we want, $H(A)$, is the entropy of the array's activation
+pattern marginalized over sensing events. Index the $B$ sampled events by
+$i=1,\dots,B$ and let $C$ be the (uniform) random variable indicating which
+event generated a given sample of $A$. Conditional on a specific event,
+receptor activations are independent Bernoulli variables with parameters
+$A_{i,r}$ (Sec.~\ref{sec:env}), so $p(A\mid C=i)$ is a simple, closed-form
+distribution. The unconditional distribution $p(A)=\frac1B\sum_i p(A\mid C=i)$
+is a \emph{mixture} of these $B$ simple components. This is a different use
+of the word from the ligand mixtures of Sec.~\ref{sec:env}, though each
+component here is populated by one such physical mixture: it refers to
+$p(A)$ itself being a mixture of distributions, one per sensing event, not
+to the chemistry of any single sensing event.
+
+By definition of mutual information,
+\begin{equation}
+H(A) = H(A\mid C) + I(A;C).
+\label{eq:mixture_decomp}
+\end{equation}
+The first term is cheap: conditioning on $C=i$ leaves $R$ independent
+Bernoulli variables, so
+\begin{equation}
+H(A\mid C) \equiv H_\text{cond} = \frac{1}{B}\sum_i \sum_r h_2(A_{i,r}),
+\qquad
+h_2(a) = -a\log_2 a - (1-a)\log_2(1-a).
+\label{eq:hcond}
+\end{equation}
+The second term, $I(A;C)$, is exactly as hard to compute as $H(A)$ itself:
+it asks how distinguishable the $B$ components are, which still requires
+the full joint distribution. Kolchinsky and Tracey give certified upper and
+lower bounds on it from pairwise affinities between components
+alone~\cite{kolchinsky_estimating_2017}, avoiding the $2^R$ enumeration.
+
+\begin{itemize}
+\item \textbf{Lower bound.} The Bhattacharyya affinity between events $i$
+and $j$,
+\begin{equation}
+\log\text{BC}(i,j) = \sum_r \log\!\Bigl(\sqrt{A_iA_j}+\sqrt{(1-A_i)(1-A_j)}\Bigr),
+\label{eq:BC}
+\end{equation}
+gives
+\begin{equation}
+H_\text{KT}^\text{low} = H_\text{cond} - \frac{1}{B}\sum_i \log_2\!\Bigl(\frac{1}{B}\sum_j \text{BC}(i,j)\Bigr).
+\label{eq:KTlow}
+\end{equation}
+\item \textbf{Upper bound.} Replacing the Bhattacharyya affinity by minus
+the Kullback-Leibler (KL) divergence between the same product-Bernoulli
+components,
+\begin{equation}
+-\text{KL}(i\|j) = \sum_r \Bigl[A_i\log A_j + (1-A_i)\log(1-A_j)\Bigr] - \sum_r\Bigl[A_i\log A_i+(1-A_i)\log(1-A_i)\Bigr],
+\label{eq:KL}
+\end{equation}
+gives
+\begin{equation}
+H_\text{KT}^\text{up} = H_\text{cond} - \frac{1}{B}\sum_i \log_2\!\Bigl(\frac{1}{B}\sum_j e^{-\text{KL}(i\|j)}\Bigr).
+\label{eq:KTup}
+\end{equation}
+\end{itemize}
+
+Both bracket terms have the form $H_\text{cond}+(\text{estimate of }I(A;C))$.
+Because $C$ is uniform over $B$ values, $I(A;C)\le H(C)=\log_2 B$ always,
+and both pairwise-affinity sums above are constructed to land in
+$[0,\log_2 B]$ for the same reason: the diagonal term, $\text{BC}(i,i)=1$
+and $\text{KL}(i\|i)=0$, dominates when the off-diagonal affinities vanish,
+capping the correction at $\log_2 B$. It is only this correction term that
+is bounded by $\log_2 B$, not $H(A)$ itself: $H_\text{cond}$ grows with $R$
+and is unrelated to $B$, so $H(A)$ can exceed $\log_2 B$ once $H_\text{cond}$
+is large enough, even though $I(A;C)$ alone cannot.
+
+$H_\text{KT}^\text{low} \le H(A) \le H_\text{KT}^\text{up}$ is a certified
+bracket for any $B$. It tightens as the off-diagonal affinities
+$\text{BC}(i,j)$, $i\ne j$, shrink towards $0$, that is, as different
+sensing events drive distinguishable, non-overlapping subsets of receptors
+rather than similar, overlapping ones. This is precisely what optimizing
+$\{\mathbf v_u^\pm\}$ to decorrelate the receptors and sharpen their
+thresholds (Sec.~\ref{sec:env}) drives the array toward. In Fig.~2 of the
+main text, solid lines report $H_\text{KT}^\text{up}$ and dotted lines
+$H_\text{KT}^\text{low}$.
+
+\bibliographystyle{apsrev4-2}
+\bibliography{smelling}
+
+\end{document}

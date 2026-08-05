@@ -1,0 +1,3 @@
+- l.90 remove the "not a separated one" no one proposed that it would be a separated statement, it's just the result of your internal thought
+- table II third lines: "no ball bridges families" you have to explain that receptors activate one at a time, similar to the second line issue.
+- 

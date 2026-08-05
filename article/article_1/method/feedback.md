@@ -1,0 +1,43 @@
+- In line 33, you start talking about v_l without really explaining what it is. Could you say, in one sentence that v_l characterize the morpho chemical property of the ligand, that the space is abstract, and each dimension can represent arbitrary morpho chemical characteristics.
+- line 34 you mention E_base before defining it. You should define E_base first. Maybe Eq.~9 should appear earlier, and then you  talk about d, the morpho-chemical space etc...
+- you say it's the midpoin : but in fact it's the average ! I know mathematically it's the same, but the physics is kinda different.
+- You can say that \lambda essentially defines the lengthscale in the morpho-chemical space.
+- lines 46, you say log-concentration parameters, I don't like this formulation, just talk about a log-normal distribution, and write the formula lognormal(log(mu),\sigma)...
+- line 47, you say "this is the full parameter set defining the environment" You didn't talk about the bernoulli mixture, and the average number of ligand per sniff.
+- You should explain that the environment is drawn once per simulation, but sampling means drawing a sniff. In the organisation of section III. You should make it more apparent by explaining "we first generate a fix environment ...", "next we are sampling sniff event by drawing ... from this that distribution" 
+- line 56 replace "small" by "as small as possible"
+- you see line 57 you are explaining what is fixed, what is optimized, and you kinda of told that the sniff event was a sampling. But I would like to make this more apparent, and start with the fix environment, the sniff, the optimization. 
+- can you say that we use adam optimizer, and pytorch with backpropagation of the gradient.
+- remove the reference to main text as in l58. it's fine to repeat things that was in the main text in the supplementary.
+- l.68 You missed the argument, it's not only meaningfull to compare homomers from heteromers in that specific regime, but it's only meaningfull when we know that the environment isn't what is limiting the entropy. So that's why we seek for the perfect array regime. Then I would like to spin the parameters independancy as an element of robustness of the model. However, you should mention that both regime coincides, it make sense: once the entropy isn't limited by statistical/geometric/numerical issues, the only thing left is the characteristic of the array of receptor, good! That's what we are interesting in. Got it ?
+- l 71 I don't like the formulation "fall short", neither do I like the "(main text)" reference. I prefer "as we showed in the main text".
+- l .72, I don't like the "this is the point of the window". window isn't define properly, and it doesn't add much.
+- So So you should wrapp up the two first paragraph of section IV, they are not separated arguments. Make it smaller, and follow the argumentation I gave you right before.
+- l.76 comes too late, this statement must be part of the explanation of the first paragraph, it's part of why we are looking for a regime where none of the three mechanisms limit the entropy.
+- l.77 remove the reference to sec III it's a trivial statement.
+- l.77 You didn't define H(mixture)
+- l.80 you should probably cite zwicker paper that state what are the conditions for the receptors to behave perfectly : half of them activated and decorrelated.
+- l.82 remove the "not about H(mixture)" 
+- L.84 : remove 'usually for reasons of computational cost' it's too vague, state explicitely what kind of limitation : batch size, intractable gradient, latent space dimension too big.
+- l.86 "the geometric mechanism is a capacity question" idk what is a capacity question, and the reader wont either. remove the mention to capacity.
+- l.86 you mention the VC dimension without defining it, you sort of define it next, but you should do the other way around.
+- l 89-> 93 kinda useless, just compress it in one or two sentences.
+- l.94 first sentence useless, keep only the second one.
+- table II. second line, you need to properly define "the ball geometric".
+- table II. 4th lines "never hurts capacity" use a more scientific formulation. "only numerical cost..." just state plainly the problem : it makes the numerical evaluation harder ! The second sentence is straight-up wrong ! We use the smallest D that isn't affected by the VC dimension for gaussian kernels. Plus give  the actual range I'm using you can check @het_casc.py file to see how I'm generating environments.
+- L.98-100  This is an inconsistent justification. It's not about the batch size (I mean it is also about the batch size) but even before batch size, I cannot even store an array that is that big ! You explain it well after.
+- l. 103 "marginalized over sensing events" Don't throw technical terms without explaining what does it means is unclear. Or maybe that is something we want to show in the paragraph, in that case state it as : "we first re formulate H(A) as the entropy of ... marginalized over sensing event..." 
+- l.103-109, you mix the term "sensing event" "sampled events" and "batch" (in the rest of the paper). You must harmonize the vocabulary.
+- l.105 " independent Bernoulli variables with parameters Ai,r " explain better what A_{i,r} is. Here you are passing to fast. do not insist, but define it once, well. Then ref (sec. III) is not clear ! why are you referencing this section ? remove it or explain what I should look for in sec. III.
+- l105-106 "so p(A | C = i)105 is simple"  what is the added value of this ? useless, remove it, or write the full probability distribution if that can help the reasoning.
+- l.106 "the unconditional", earlier you called it marginalized, now it's unconditional : HARMONIZE THE VOCABULARY !
+- you explain that p(a) as the marginalized over the batches is a mixture. Yes, but it's only a mixture, because p(A|C) was a mixture before ! we don't understand here why it is a mixture here, it's a mixture through the addition of every ligands activation. 
+- "a different use of the word “mixture” from Sec. III: it refers to p(A) being a mixture of distributions, one per sensing event, not to the chemistry of any one event, though each component here is populated by one such physical mixture." useless sentence, remove it
+-l.110 "The first term is cheap, conditioning on C = i leaves R independent Bernoulli variables," : see that was usefull to use when you define p(A|C=i)
+- We know what is A_{i,r}, but you don't define A_i as used in eq.17
+- l.119 you write C uniform over B, I<H = log(B) The uniformity only affect the H=logB, so write I<H, that's generally true, and then wrute C uniform so H = log(B.)
+- l.120 - 123 : "and both pairwise-affinity sums land in [0, log2 B] for the same reason: the diagonal term, BC(i, i) = 1, KL(i∥i) = 0, dominates when the off-diagonal affinities vanish, capping the correction at log2 B. Only this correction is bounded by log2 B, not H(A) itself: Hcond grows with R, unrelated to B, so H(A) can exceed log2 B once Hcond is large enough, even though I(A; C) alone cannot." I don't understand the value of this. It feels that you are adressing a problem, that we have discuss, but the reader know nothing of. Remove it.
+- l.124-125 : "It tightens as the off-diagonal affinities BC(i, j), i̸ = j, shrink towards 0," no one will understand what that means. Make it understandable, or remove it.
+- The fact that the approximation becomes better as the algorithm converge is a great behavior, that must be explain better.
+- l.127 reference to sec II. brings nothing.
+- l.127 last sentence, is useless the legend of the main text is enough.

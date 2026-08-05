@@ -528,6 +528,17 @@ to 0 and I(A;M) → H(A) spuriously.
 batch sizes. The Miller-Madow correction adds `(K_hat − 1) / (2·B·ln2)` where K_hat is
 the number of distinct observed codewords, partially correcting this bias.
 
+**Post-hoc measurement (outside the pipeline):** `analysis_helper` exposes reusable
+primitives for re-measuring a **reloaded** checkpoint (via `plotlib.load_model`) without
+retraining — `sample_activity(env, physics, ri, n_samples)` (estimator-agnostic, chunked
+forward so memory is bounded), `kt_bracket(...)` (its KT lower/upper convenience), and
+`eval_batch_cap(free_bytes)` (the `(tile, B)` memory cap). `src.testscaling` orchestrates on
+top of these (walk sweeps → pick runs → choose test sizes → write `<sweep>/test_scaling.csv`);
+the per-task `tasks/*/scripts/test_scaling.py` are thin wrappers (`build_parser` +
+`sizes_from_args` + `run`) that just set defaults. Size strategy: `--test_sizes` (absolute),
+`--mult` (per-run multiples of the train batch B, e.g. `1 2 4 8 16`), or an auto ×4 ladder —
+to check the entropy-vs-samples curve has plateaued.
+
 ---
 
 ## Sweep Architecture (`config.py::RunConfig + run.py::SweepRunner`)
