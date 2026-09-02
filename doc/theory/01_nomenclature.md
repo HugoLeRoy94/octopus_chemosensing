@@ -37,10 +37,26 @@
 
 - $\mathcal{A} = (a_0,a_1, \cdots , a_N)$: activity value of the array of receptors.
 
+### Cell-level notation (see §07.3b)
+
+- $c$: index / identity of a cell. $C$: number of cells in the array.
+
+- $G_c$: set of subunit genes expressed by cell $c$; $g = |G_c|$ its size. A cell assembles **every** receptor its genes allow, so $G_c$ determines the cell's receptor repertoire.
+
+- $R_\text{pool}$: size of the deduplicated union of every cell's repertoire — the number of distinct receptors that must actually be simulated. Bounded by $\binom{n_\text{genes} + k_\text{sub} - 1}{k_\text{sub}}$.
+
+- $W_{cr}$: abundance of receptor $r$ in cell $c$, normalised so $\sum_r W_{cr} = 1$ (a cell has a fixed total receptor count regardless of how many genes it expresses). Zero when cell $c$ cannot assemble $r$.
+
+- $S_{bc} = \sum_r W_{cr} p_{br}$: the **drive** of cell $c$ on sniff $b$ — the abundance-weighted fraction of its receptors that are open. Proportional to the cell's ionic current.
+
+- $\theta_c$: firing threshold of cell $c$. $T_\text{cell}$: sharpness of the cell firing step, annealed like the receptor temperature $T$.
+
 ## Vocabulary
 
 - Receptor: a single ion channel.
 - Unit: a single protein that constitue a receptor.
+- Cell: a sensory neuron, identified by the set of subunit genes it expresses. It assembles every receptor combination those genes permit, and its activity pools over that whole repertoire.
+- Repertoire: the set of receptors one cell can assemble from its expressed genes.
 - ligand: an arbitrary molecule.
 - Pocket: the region of the unit within which a ligand bind.
 - Residue: a piece of molecule that composes the pocket or/and a ligand.

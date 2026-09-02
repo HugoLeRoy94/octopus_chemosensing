@@ -112,37 +112,48 @@ cmap_enrich = plt.get_cmap('RdBu_r').copy()
 cmap_enrich.set_bad(color='lightgray')
 
 plt.rcParams.update({
-    'font.size': 9,
+    'font.size': 6,
     'font.family': 'serif',
     'mathtext.fontset': 'cm',
     'xtick.direction': 'in',
     'ytick.direction': 'in',
+    'xtick.major.size': 2,
+    'ytick.major.size': 2,
+    'xtick.major.pad': 1.5,
+    'ytick.major.pad': 1.5,
+    'axes.labelpad': .5,
+    'axes.linewidth': 0.5,
 })
 
-fig = plt.figure(figsize=(8, 8))
-gs = fig.add_gridspec(2, 2, height_ratios=[1, 3], width_ratios=[20, 1], hspace=0.15, wspace=0.05)
+fig = plt.figure(figsize=(1.5, 1.9))
+# no layout engine: margins and hspace set by hand so hspace can go negative
+gs = fig.add_gridspec(2, 2, height_ratios=[1, 3], width_ratios=[20, 1],
+                      hspace=0.05, wspace=0.05,
+                      left=0.22, right=0.92, top=1.0, bottom=0.10)
 ax0 = fig.add_subplot(gs[0, 0])
 ax1 = fig.add_subplot(gs[1, 0], sharex=ax0)
 cax = fig.add_subplot(gs[1, 1])
 axs = [ax0, ax1]
 
-axs[0].bar(k_values, k_counts, color='steelblue', edgecolor='black')
+axs[0].bar(k_values, k_counts, color='steelblue', edgecolor='black', linewidth=0.5)
 axs[0].set_ylabel('Cell count')
-axs[0].set_title('Distribution of total expressed genes per cell')
+# shared x axis: set_xticks on ax0 is overwritten by ax1, hide the labels/ticks instead
+axs[0].tick_params(axis='x', labelbottom=False, bottom=False, top=False)
+#axs[0].set_title('Distribution of total expressed genes per cell')
 
 im = axs[1].imshow(enrichment[id_sort, :], aspect='auto', cmap=cmap_enrich, norm=norm_enrich,
                     extent=[k_values[0] - 0.5, k_values[-1] + 0.5, nR - 0.5, -0.5])
 axs[1].set_yticks(np.arange(nR))
-axs[1].set_yticklabels(CRnames[id_sort], fontsize=9)
+axs[1].set_yticklabels(CRnames[id_sort],fontsize=5)
 axs[1].set_xticks(k_values)
 axs[1].set_xlim(k_values[0] - 0.5, k_values[-1] + 0.5)
-axs[1].set_xlabel('Number of expressed genes in cell (k)')
+axs[1].set_xlabel('Expressed genes per cell (k)')
 axs[1].set_ylabel('Gene')
-axs[1].set_title('Enrichment  P(gene | L=k) / (k/N)  — white = flat expectation')
+#axs[1].set_title('Enrichment  P(gene | L=k) / (k/N)  — white = flat expectation')
 
-plt.colorbar(im, cax=cax, label='Enrichment (1 is no enrichement)')
-plt.tight_layout()
-plt.savefig('P_conditionned_k5.svg')
+cb = plt.colorbar(im, cax=cax, label='Enrichment')
+cb.outline.set_linewidth(0.5)
+plt.savefig('P_conditionned_k5.svg',bbox_inches='tight', pad_inches=0.01)
 
 # %%
 

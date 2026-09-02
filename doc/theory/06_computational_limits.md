@@ -48,6 +48,47 @@ The choice of entropy estimator fundamentally changes the underlying PyTorch ten
    - **The Math:** To bypass the exponential state space, the Rényi entropy proxy evaluates the diversity of the array using pairwise interactions. Given the activation matrix $\mathbf{A}$ of shape $(B, R)$, the core operation is a matrix multiplication $\mathbf{A}^T \mathbf{A}$. This multiplies an $(R, B)$ tensor by a $(B, R)$ tensor, yielding a dense pairwise covariance/repulsion matrix of shape $(R, R)$. We then penalize the off-diagonal elements of this matrix to forcefully orthogonalize the receptors.
    - *Impact:* **This is the primary memory bottleneck during standard training.** Because it operates in $\mathcal{O}(R^2)$ space, it completely avoids the $2^R$ explosion. If $R=10,000$, the resulting $(R, R)$ pairwise matrix takes $\approx 400$ MB, making the optimization of massive arrays highly manageable.
 
+### The Cell-Mode Bottleneck: the receptor pool
+
+In the cell picture (§07.3b) the array is $C$ cells, but each cell assembles **every**
+receptor its expressed genes allow, so the physics still runs over the deduplicated
+union of all repertoires, $R_\text{pool}$. The two decouple sharply, and it is
+$R_\text{pool}$ — not $C$ — that binds the physics memory $\mathcal{O}(B \cdot L \cdot R_\text{pool} \cdot k_{sub})$:
+
+| genes per cell $g$ | repertoire $\binom{g+4}{5}$ | interface-model repertoire |
+|---|---|---|
+| 1 | 1 | 1 |
+| 2 | 6 | 8 |
+| 3 | 21 | 51 |
+| 5 | 126 | 629 |
+| 8 | 792 | 6560 |
+
+$R_\text{pool}$ is capped at the full pool $\binom{n_\text{genes}+k_{sub}-1}{k_{sub}}$
+(142,506 for $n_\text{genes}=26$, $k_{sub}=5$), which at $B=1024$, $L=8$ needs $\approx 23$ GB
+for a single energy tensor. Three mitigations, in the order to reach for them:
+
+1. **Deduplicate the pool.** `CellArray` already does this: a receptor several cells
+   share is simulated once. Cells drawn from overlapping gene sets pool cheaply.
+2. **Chunk the pool.** All cell readouts reduce over $r$ through a term linear in the
+   per-receptor contribution, so `cell_activity` walks the pool in slices of
+   `cell_pool_chunk` and sums the $(B, C)$ accumulator: peak forward tensor
+   $\mathcal{O}(B \cdot L \cdot \text{chunk})$. Pair with `recompute_backward=True`
+   (gradient-checkpoints each chunk) or the saving holds only under `no_grad`.
+3. **Cap the genes per cell** via `cell_max_genes` — the table above is superlinear,
+   so this is the highest-leverage knob.
+
+Note the estimator bottlenecks below are driven by $C$, not $R_\text{pool}$:
+`resolve_batch_sizes` receives `n_receptors=C` and `n_physics_receptors=R_pool` so
+each cap sees the right quantity. Cell mode is therefore usually *cheaper* on the
+entropy side (few cells) and *dearer* on the physics side (large pool) than the
+receptor picture.
+
+**Not yet implemented (the obvious next win):** in the standard model
+$\ln EC_{50}$ is linear in the subunit energies, so the per-receptor gather in
+`physics.py::BaseReceptor.forward` could be replaced by a matmul against a
+composition matrix $M_{ur} = $ (copies of gene $u$ in receptor $r$), removing the
+$k_{sub}$ factor from the pool axis entirely.
+
 ## 6.2 Key Algorithmic Decisions
 
 ### Dynamic Quadrature Fallback
@@ -57,7 +98,7 @@ To prevent OOM errors in high-dimensional latent spaces, the `physics.py` module
 ## 6.3 Rule of Thumb for Scaling
 If the simulation encounters a CUDA Out Of Memory error, adjust parameters in this order:
 1. **Reduce Batch Size ($B$)**: Directly impacts almost all tensor allocations.
-2. **Reduce Number of Receptors ($R$)**: Relieves the $\mathcal{O}(R^2)$ penalty bottleneck or the $\mathcal{O}(B \cdot 2^R)$ exact entropy bottleneck.
+2. **Reduce Number of Receptors ($R$)**: Relieves the $\mathcal{O}(R^2)$ penalty bottleneck or the $\mathcal{O}(B \cdot 2^R)$ exact entropy bottleneck. In cell mode this splits in two: reduce $C$ for the entropy bottleneck, reduce $R_\text{pool}$ (via `cell_max_genes` or `cell_pool_chunk`) for the physics one.
 3. *Note:* You do not need to reduce the latent space dimension ($D$) or the number of families ($F$), as they contribute negligibly to the training memory footprint.
 
 

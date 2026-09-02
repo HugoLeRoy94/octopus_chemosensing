@@ -24,6 +24,10 @@ LigandEnvironment  ←───────────────────�
         ▼
 activity  (B, R)                        ─── 3. Receptor Physics
         │
+        │  CellReadout  (cell mode only — otherwise this stage is absent)
+        ▼
+activity  (B, C)                        ─── 3b. Cell Readout
+        │
         │  DiscreteExactLoss / MI losses
         ▼
 scalar loss                             ─── 4. Loss Computation
@@ -250,9 +254,229 @@ quadrature grid impractical), it falls back to the mean-energy approximation.
 
 ---
 
+## Stage 3b — Cell Readout (`cells.py`) — optional
+
+Present only when the config declares cells (`cell_gene_sets` or `n_cells` is set;
+`SingleRunConfig.is_cell_mode()`). It shifts the sensory unit from the RECEPTOR to
+the CELL: instead of listing R receptors, one lists C cells, each defined by the set
+of subunit genes it expresses. A cell assembles **every** receptor its genes allow.
+
+### 3b.1 Repertoire expansion
+
+A cell $c$ expressing the gene set $G_c$ with $g = |G_c|$ assembles
+
+- **standard model** — the unordered multisets of size $k_{sub}$ over $G_c$:
+  $\binom{g + k_{sub} - 1}{k_{sub}}$ receptors.
+  $G_c = \{0,2\}$, $k_{sub}=5$ gives the 6 receptors
+  $(0,0,0,0,0)$, $(0,0,0,0,2)$, $(0,0,0,2,2)$, $(0,0,2,2,2)$, $(0,2,2,2,2)$, $(2,2,2,2,2)$.
+- **interface model** (`use_interface_model=True`) — the canonical cyclic ring
+  arrangements, rotations identified and reflections distinct (same convention as
+  `geometry.generate_ordered_receptor_indices`, §"Receptor Sampling Strategies"):
+  $\frac{1}{k_{sub}} \sum_{d \mid k_{sub}} \varphi(d)\, g^{k_{sub}/d}$ receptors,
+  where $\varphi$ is Euler's totient function. For $g=2$, $k_{sub}=5$: 8 arrangements.
+
+`CellArray` expands every cell, then takes the **deduplicated union** as
+`receptor_indices` of size $R_{pool}$ — a receptor shared by several cells is
+simulated once — and records the abundances in a matrix $W$ of shape $(C, R_{pool})$
+with $W_{cr} = 0$ when cell $c$ cannot assemble receptor $r$.
+
+### 3b.2 Abundance ($W$), `cell_stoichiometry`
+
+Rows of $W$ are normalised: $\sum_r W_{cr} = 1$. A cell has a fixed total number of
+receptors regardless of how many genes it expresses; only their diversity changes.
+
+- `'multinomial'` (default) — **random assembly**: all subunits are produced in equal
+  amounts and assemble independently into the $k_{sub}$ slots, so each of the $g^{k_{sub}}$
+  ordered words is equally likely and a receptor's abundance is proportional to how
+  many words collapse onto it. For a receptor with $n_i$ copies of gene $i$:
+  $$ W_{cr} \;\propto\; \frac{k_{sub}!}{\prod_i n_i!} \qquad\text{(standard model)} $$
+  $$ W_{cr} \;\propto\; \#\{\text{distinct rotations of the ring word}\} \qquad\text{(interface model)} $$
+  For $g=2$, $k_{sub}=5$ this gives $1,5,10,10,5,1$ out of 32 — homomers are strongly
+  suppressed relative to mixed receptors, with no free parameter.
+- `'uniform'` — every receptor type the cell can make is present in equal amount,
+  $W_{cr} = 1 / |{\rm repertoire}|$. Implies per-type assembly control rather than
+  random mixing.
+
+### 3b.3 Activation, `cell_readout`
+
+The abundance-weighted open fraction (the **drive**) is
+$$ S_{bc} \;=\; \sum_{r} W_{cr}\, p_{br} $$
+with $p_{br}$ the open probability of receptor $r$ on sniff $b$ from Stage 3.
+
+- `'threshold'` (default) — the cell's ionic current is proportional to the number of
+  its open receptors, and it fires above a threshold:
+  $$ A_{bc} \;=\; \sigma\!\left( \frac{S_{bc} - \theta_c}{T_{cell}} \right) $$
+  $A_{bc}$ is a genuine firing probability, which is what the Bernoulli-mixture
+  entropy estimators of Stage 4 assume.
+- `'noisy_or'` — the cell is active if any of its receptors opens:
+  $A_{bc} = 1 - \exp\!\big(\sum_r k_{sub} W_{cr} \ln(1 - p_{br})\big)$. No threshold
+  parameter, but saturates toward 1 for cells with large repertoires.
+- `'mean'` — $A_{bc} = S_{bc}$. Diagnostic only: a mean of probabilities is not a
+  firing probability, so the Stage 4 estimators over-read it.
+
+**Calibration** (`calibrate_cell_readout`, threshold mode only). Same rationale as
+`compute_initial_temperature` in Stage 3: a threshold off the support of $S$ leaves
+every cell permanently silent or saturated and the array carries zero entropy.
+- $\theta \leftarrow$ `median_threshold`$(S)$ — ONE scalar shared by all cells,
+  pinned to the median of the pooled drive so the population fires ~50% of the time.
+  Sharing it is deliberate: a per-cell threshold forces every cell to the same firing
+  rate, erasing the heterogeneity the cell picture exists to study.
+- $T_{cell} \leftarrow$ `drive_scale`$(S, \theta)$ — unit spread in the sigmoid argument.
+
+Both helpers live in `cells.py` and both exist to dodge a specific way the sigmoid
+degenerates. They are described in §3b.7.
+
+$\theta$ is **not** learnable by default (`cell_threshold_learnable=False`): it is
+pinned to the data, not fitted, so it costs no free parameter. It is **re-pinned** every
+`cell_recalibrate_every` epochs, because the drive distribution moves as the chemistry
+trains and a median measured at epoch 0 goes stale. Re-pinning also keeps the sigmoid's
+transition band on the densest part of the drive, which is where the phase-2 gradient
+comes from. A learnable $\theta$ collapses to the fair-coin degeneracy of §3b.6 and is
+kept only as an ablation.
+
+**Both $T_{cell}$ endpoints are MULTIPLES of the live drive spread**, never absolute
+values: $S$ is a weighted mean of probabilities, so its scale is set by the environment.
+The endpoints are recomputed whenever the spread is re-measured.
+
+### 3b.3b Two-phase sharpening schedule
+
+Annealing the receptor and the cell together makes the cell's operating point chase a
+drive distribution that is still moving underneath it. In cell mode the schedule is
+therefore split at `cell_phase_split` (default 0.5):
+
+| | receptor sharpness $T$ | cell sharpness $T_{cell}$ |
+|---|---|---|
+| **Phase 1** | anneals $T_{init} \to T_{final}$, reaching $T_{final}$ on the LAST epoch of the phase | held soft at $1\times$ the live spread |
+| **Phase 2** | held at $T_{final}$ | anneals down to `cell_temperature` $\times$ spread |
+
+Phase 1 keeps gradients live everywhere while the chemistry arranges the drive around
+the threshold. Phase 2 hardens the readout. `cell_temperature` defaults to 0.01, leaving
+~0.8% of $(b,c)$ pairs inside the transition band — cells are then effectively
+deterministic, which is the condition under which the entropy objective is a valid proxy
+for information (§3b.6). Receptor-only runs keep the original 80%-of-training schedule.
+
+The per-epoch measurement always evaluates at the FINAL sharpness, so the convergence
+curve during phase 1 already reports the honest hard-readout number.
+
+### 3b.6 Why the cell must be deterministic
+
+The estimators of Stage 4 read every activity as the probability that a coin lands
+heads, and charge its binary entropy into the total. Decompose the reported entropy as
+$H = H(s \mid \text{sniff}) + I(s; \text{sniff})$: only the second term is information.
+A cell sitting at $A = 0.5$ contributes a full bit of the first term and nothing to the
+second — the KT self-test `[3b]` in `bin_loss.py` shows this exactly, reporting $H = R$
+for an array of fair coins that responds to nothing.
+
+This never bit the receptor picture because the receptor temperature anneals until
+$p \in \{0, 1\}$, so $H(s \mid \text{sniff}) \approx 0$ and entropy $\approx$ information.
+Cells add a *second* softness, and if $T_{cell}$ is comparable to the spread of $S$ the
+reported entropy is almost entirely noise. Hence the phase-2 hardening above.
+
+Two consequences for the readout menu of §3b.3:
+- `'mean'` cannot escape this. $S$ is an average over the repertoire, and averages
+  concentrate, so it never approaches 0 or 1. Unusable with a binary estimator.
+- `'noisy_or'` saturates toward 1 for large repertoires — nearly binary, but stuck ON.
+
+### 3b.7 Two ways the threshold degenerates, and the two fixes
+
+Both come from the same root cause. The drive $S$ is a weighted mean of receptor open
+probabilities, and a *sharp* receptor is off unless its ligand is present, so those
+probabilities are sigmoids saturated deep into their tails. The resulting drive is
+wildly non-uniform: measured on a toy at the final receptor sharpness, **26% of
+$(b,c)$ pairs were exactly zero, the median was $\approx 10^{-30}$, and the maximum was
+$\approx 1$ — thirty orders of magnitude apart.** Placing a sharp sigmoid on a
+distribution shaped like that needs care in two separate places.
+
+**(a) The threshold must not sit on a point mass — `median_threshold`.**
+When more than half the drives share one value (typically exactly 0, the sparse-code
+case), the plain median IS that value. A sharp sigmoid centred on a point mass returns
+$\sigma(0) = 0.5$ for every member of it: the whole mass becomes fair coins and the
+array reports maximum entropy while carrying nothing (§3b.6).
+
+The rule is one line: **$\theta$ is the midpoint between the median and the next
+distinct value above it.** For a continuous drive this changes nothing of substance —
+`torch.median` returns the lower of the two middle order statistics, and the midpoint of
+those two is the textbook median, so we merely pick the interior of the median interval
+instead of its lower endpoint. For a drive with a point mass at the bottom, the same
+rule steps $\theta$ *strictly above* the mass, so those sniffs read cleanly OFF and the
+code is sparse but honest. The trap is narrow: any $\theta$ above the mass works, only
+$\theta$ exactly on it produces coins.
+
+**(b) The sharpness must be measured where the threshold is — `drive_scale`.**
+$T_{cell}$ is a fraction of "the spread of the drive", but *which* spread matters
+enormously. A standard deviation of the drive above is $\approx 4 \times 10^{-2}$ — set
+entirely by the handful of strongly-firing sniffs, and saying nothing about the
+$10^{-30}$ region the threshold actually occupies. Using it gives a $T_{cell}$ that
+swamps the middle of the distribution, and every sniff there evaluates to
+$\sigma(\approx 0) = 0.5$.
+
+Measured, on the same drive with a correctly-placed $\theta$:
+
+| spread measure | value | $T_{cell}$ | fair coins | firing |
+|---|---|---|---|---|
+| standard deviation | 3.7e-02 | 3.7e-04 | **91%** | 14% |
+| interquartile range | 1.1e-18 | 1.1e-20 | **67%** | 43% |
+| **median absolute deviation** | 1.1e-30 | 1.1e-32 | **0%** | 50% |
+
+The IQR is better but still fails, because the upper quartile sits twelve orders of
+magnitude above the median. The **MAD** is the deviation of the *typical* point from the
+median, so it tracks the middle by construction. `drive_scale` returns the MAD.
+
+A corollary worth stating: **no absolute floor may be applied to $T_{cell}$.** A guard
+like `max(T, 1e-6)` looks harmless but reinstates the whole failure when the drive lives
+at $10^{-30}$. The floor in `run.py` is $10^{-45}$, just off zero.
+
+Degenerate case: if every drive is identical, no threshold can separate anything.
+`median_threshold` flags it (`on_point_mass` in the returned diagnostics, surfaced in the
+training log) rather than silently patching, because when the drive has zero spread
+$T_{cell}$ collapses too and no nudge can outrun it.
+
+End to end, on a 40-epoch toy run: before these two fixes, 98.5% of activities were fair
+coins; after, **0%, with 49% of sniffs firing** — the design target.
+
+### 3b.4 Memory: the receptor pool is the bottleneck
+
+The physics tensors are $(B, s_{upper}, R_{pool}[, k_{sub}])$, and $R_{pool}$ — the
+union of every cell's repertoire, capped at $\binom{N_{genes}+k_{sub}-1}{k_{sub}}$ —
+grows far faster than $C$. Because all three readouts reduce over the pool through a
+term **linear** in the per-receptor contribution, `cell_activity` walks the pool in
+slices of `cell_pool_chunk` receptors and sums the $(B, C)$ accumulator, so the peak
+forward tensor is $O(B \cdot s_{upper} \cdot \text{chunk})$ instead of
+$O(B \cdot s_{upper} \cdot R_{pool})$. During training the graph is still retained
+unless `recompute_backward=True` gradient-checkpoints each chunk; without it, chunking
+only helps under `no_grad` (evaluation).
+
+`resolve_batch_sizes` is called with `n_receptors=C` and `n_physics_receptors=R_pool`:
+the estimator caps (which are exponential or quadratic in the number of channels) size
+on the C cells, while only the physics cap sees $R_{pool}$.
+
+### 3b.5 Sampling gene sets
+
+`build_cell_array` takes explicit `gene_sets`, or samples `n_cells` of them:
+- `'bernoulli'` — gene $u$ expressed independently with probability `cell_gene_probs[u]`;
+  empty cells rejected, `cell_max_genes` caps the repertoire size.
+- `'size_pmf'` — two stage: draw the *number* of expressed genes from `cell_size_pmf`
+  (entry $i$ = probability of $i+1$ genes), then draw that many genes uniformly without
+  replacement. This is the hook for an arbitrarily complex expression model — a
+  distribution conditioned on how many genes are already expressed is exactly a choice
+  of `cell_size_pmf`.
+
+Sampling happens **once**, in `SingleRunConfig.__post_init__`, which writes the
+resolved gene sets back into `cell_gene_sets` and the derived pool into
+`receptor_indices`. Both are persisted in `config.json`, so a run is exactly
+reproducible from it; `SimulationRunner._initialize` rebuilds $W$ from the stored gene
+sets and asserts the pool matches.
+
+---
+
 ## Stage 4 — Loss Computation
 
 Loss modules are selected by `cfg.entropy` in `run.py::_build_loss`.
+
+Every loss and every measurement consumes a `(B, N)` activity tensor and is agnostic
+to whether `N` counts receptors (Stage 3) or cells (Stage 3b) — the two pictures
+differ only at `SimulationRunner._activity`. Read `R` below as "number of channels
+in the array": it is `C` in cell mode.
 
 ### 4a. `DiscreteExactLoss` (`bin_loss.py`) — maximize joint array entropy
 
@@ -548,9 +772,11 @@ List-valued fields are **zip-iterated** (not crossed): all axis lists must share
 the same length L, producing exactly L steps in a single trajectory.
 
 Fields whose values are inherently arrays (`conc_mean`, `conc_std`,
-`kernel_params`, `measurement_fns`) use a `tuple` when fixed and a `List[tuple]`
-when iterated, so `isinstance(val, list)` uniformly identifies every axis without
-special-casing.
+`kernel_params`, `measurement_fns`, `cell_gene_probs`, `cell_size_pmf`) use a
+`tuple` when fixed and a `List[tuple]` when iterated, so `isinstance(val, list)`
+uniformly identifies every axis without special-casing. `cell_gene_sets` is nested
+one level deeper (a tuple of gene tuples) and so has its own round-trip handling
+(`_NESTED_TUPLE_FIELDS`).
 
 Concentration parameters are supplied **directly** as tuples in the config (no
 range-based RNG sampling).  To obtain multiple statistically independent runs,
@@ -585,6 +811,26 @@ interrupted or partial sweeps.
 | `receptor_sampling_strategy` | `str` | `"cascading"` (default) or `"uniform_random"` |
 | `receptor_sampling_seed` | `Optional[int]` | RNG seed; same args → same receptor set |
 | `use_interface_model` | `bool` | Forwarded to `build_heteromer_array`; routes to ordered-ring variants when `True` |
+
+**Fields for cell sweeps** (§3b). Setting `cell_gene_sets` **or** `n_cells` switches
+the array from receptors to cells; `receptor_indices` is then derived and
+`n_receptors` / `receptor_sampling_*` are ignored.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `cell_gene_sets` | `Optional[Tuple[Tuple[int,...],...]]` | Explicit gene set per cell |
+| `n_cells` | `Optional[int]` | Sample this many gene sets instead |
+| `cell_sampling_strategy` | `str` | `"bernoulli"` (default) or `"size_pmf"` |
+| `cell_gene_probs` | `Optional[Tuple[float,...]]` | bernoulli: P(gene *u* expressed); default `2/n_genes` each |
+| `cell_size_pmf` | `Optional[Tuple[float,...]]` | size_pmf: entry *i* = P(cell expresses *i*+1 genes) |
+| `cell_max_genes` | `Optional[int]` | bernoulli: reject cells above this (caps $R_\text{pool}$) |
+| `cell_sampling_seed` | `Optional[int]` | RNG seed; same args → same gene sets |
+| `cell_stoichiometry` | `str` | `"multinomial"` (default, random assembly) or `"uniform"` |
+| `cell_readout` | `str` | `"threshold"` (default), `"noisy_or"`, `"mean"` |
+| `cell_threshold` | `float \| "auto"` | `"auto"` → per-cell median drive at calibration |
+| `cell_temperature` | `float` | $T_\text{cell}$ at the end of annealing |
+| `cell_initial_temperature` | `float \| "auto"` | `"auto"` → std of the calibrated drive |
+| `cell_pool_chunk` | `Optional[int]` | Receptors per pool chunk in the fused physics+readout pass |
 
 **Batch-size auto-scaling** (`run.py::resolve_batch_sizes`): pass `batch_size="auto"` and/or
 `test_batch_size="auto"` in `SingleRunConfig` / `RunConfig` to have sizes resolved at init
