@@ -83,11 +83,58 @@ each cap sees the right quantity. Cell mode is therefore usually *cheaper* on th
 entropy side (few cells) and *dearer* on the physics side (large pool) than the
 receptor picture.
 
-**Not yet implemented (the obvious next win):** in the standard model
-$\ln EC_{50}$ is linear in the subunit energies, so the per-receptor gather in
-`physics.py::BaseReceptor.forward` could be replaced by a matmul against a
-composition matrix $M_{ur} = $ (copies of gene $u$ in receptor $r$), removing the
-$k_{sub}$ factor from the pool axis entirely.
+### Composition binding (implemented, on by default)
+
+$\ln EC_{50}$ is LINEAR in the per-source energies, so the per-receptor gather can be
+replaced by a single matmul against a composition matrix. `LigandEnvironment.bind_receptors`
+builds it, `BinaryReceptor._forward_composition` uses it, and `use_composition=True` is
+the default. A **source** is a distinct thing whose energy has to be computed:
+
+| model | source | composition $C_{sr}$ | $n_\text{sources}$ |
+|---|---|---|---|
+| standard | a gene | copies of gene $s$ in receptor $r$ | $n_\text{genes}$ |
+| interface | a pocket = (plus-face gene, minus-face gene) | occurrences of pocket $s$ in receptor $r$ | $\le n_\text{genes}^2$ |
+
+$\ln EC_{50} = \tfrac{1}{k_{sub}}\,E\,C$ with $E$ of shape $(B, L, n_\text{sources})$,
+writing $(B, L, R)$ directly. Two distinct wins:
+
+**Standard model — the $k_{sub}$ factor disappears.** The gather built a
+$(B, L, R, k_{sub})$ tensor only to average it away; autograd retained it for backward.
+The matmul never materialises it. Measured: **4.1× faster** forward+backward.
+
+**Interface model — the pocket redundancy disappears.** A pocket's energy depends ONLY
+on the (plus, minus) gene pair straddling it — not on which receptor it sits in, nor on
+its ring position — so there are at most $n_\text{genes}^2$ distinct pockets however
+large the pool. The old code evaluated one per (receptor, ring slot):
+
+| genes | cells | $R_\text{pool}$ | pockets evaluated | actually distinct | redundancy |
+|---|---|---|---|---|---|
+| 10 | 20 | 7,540 | 37,700 | 100 | **377×** |
+| 26 | 50 | 28,706 | 143,530 | 562 | **255×** |
+| 26 | 100 | 53,456 | 267,280 | 644 | **415×** |
+
+Measured on a 9,306-receptor pool: the energy tensor drops from 238,233,600 elements to
+706,560 (**337× smaller**) and forward+backward is **9.7× faster**.
+
+Exact, not approximate — verified against the gather path in both models
+(`max |p_gather − p_composition|` = 3.6e-07 standard, 3.0e-07 interface; float32 noise).
+The old path is retained behind `use_composition=False`, which `MWCReceptor` requires:
+its $\ln EC_{50}$ is not linear in the subunit energies, so it raises rather than
+silently returning a wrong answer.
+
+**Why this was not worth doing before cell mode.** The cost structure inverted. The
+$k_{sub}$-wide transient, at the largest batch each array size can afford:
+
+| receptors | batch | transient | |
+|---|---|---|---|
+| 20 | 32,557 | 0.10 GB | negligible |
+| 45 | 21,705 | 0.15 GB | negligible |
+| 4,900 | 14,560 | 10.63 GB | binding |
+
+At the 20–45 receptors of the receptor picture this was a tenth of a gigabyte and the
+bottleneck was entirely the entropy estimator. Cell mode raises $R_\text{pool}$ ~200×
+without changing the channel count $C$, which is what turned a rounding error into the
+dominant term.
 
 ## 6.2 Key Algorithmic Decisions
 

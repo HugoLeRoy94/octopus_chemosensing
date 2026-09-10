@@ -387,6 +387,15 @@ $(b,c)$ pairs were exactly zero, the median was $\approx 10^{-30}$, and the maxi
 $\approx 1$ — thirty orders of magnitude apart.** Placing a sharp sigmoid on a
 distribution shaped like that needs care in two separate places.
 
+**(0) The threshold must stay inside physics — the $1/N$ floor.**
+Before either of the two below: the median is a pure RANK statistic and knows nothing
+about scale, so on a sparse code it runs off the bottom of the drive — measured at
+$10^{-290}$, which at a copy number of $N = 10^4$ receptor molecules per cell is
+$10^{-286}$ open channels. Since the drive is a *fraction* of the cell's receptors that
+are open, the number open is an integer $n = NS$ and $1/N$ is its resolution: below one
+open channel there is no state. $\theta$ is floored there (`cell_n_molecules`), which
+also fixes $T_{cell}$ for free — see §09 §9.8.1 for the full treatment and the numbers.
+
 **(a) The threshold must not sit on a point mass — `median_threshold`.**
 When more than half the drives share one value (typically exactly 0, the sparse-code
 case), the plain median IS that value. A sharp sigmoid centred on a point mass returns

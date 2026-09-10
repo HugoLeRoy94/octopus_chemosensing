@@ -1,4 +1,4 @@
-- In line 33, you start talking about v_l without really explaining what it is. Could you say, in one sentence that v_l characterize the morpho chemical property of the ligand, that the space is abstract, and each dimension can represent arbitrary morpho chemical characteristics.
+ - In line 33, you start talking about v_l without really explaining what it is. Could you say, in one sentence that v_l characterize the morpho chemical property of the ligand, that the space is abstract, and each dimension can represent arbitrary morpho chemical characteristics.
 - line 34 you mention E_base before defining it. You should define E_base first. Maybe Eq.~9 should appear earlier, and then you  talk about d, the morpho-chemical space etc...
 - you say it's the midpoin : but in fact it's the average ! I know mathematically it's the same, but the physics is kinda different.
 - You can say that \lambda essentially defines the lengthscale in the morpho-chemical space.
