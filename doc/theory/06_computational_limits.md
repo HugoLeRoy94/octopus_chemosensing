@@ -3,7 +3,37 @@
 Optimizing combinatorial receptor arrays in high-dimensional environments frequently encounters the "Curse of Dimensionality." This document outlines the physical GPU memory limits of the simulation and the architectural fallbacks implemented to avoid Out Of Memory (OOM) errors.
 
 ## 6.1 Scaling & Memory Footprints
+
+**MI training and final counting (2026-09-11):** `entropy='kt_mi'` uses the same
+pairwise computation and automatic budgets as `kt`. Removing the analytic
+conditional term costs only O(BC) less work; it does not change the O(B²C) bottleneck
+or the $\log_2 B$ ceiling of the empirical MI bracket. Cell physics still scales
+with $R_{pool}$, whereas the estimator sees C.
+
+For a large final sample budget, set `final_measurement_fns` to
+`('mutual_information_counting',)` and set `final_test_batch_size` explicitly.
+This streams physics in `eval_chunk_size` batches and accumulates conditional
+entropy without retaining the full probability matrix or computing KT. Observed
+binary outputs are retained on CPU; current `torch.unique(..., dim=0)` counting
+converts them to int64 and uses sorting/workspace, so memory is O(BC) with a
+larger constant than the stored boolean codes. It is not constant-memory streaming.
+Counting needs no $2^C$ enumeration or B² pairwise comparisons, making larger B
+practical, but statistical undersampling remains. Soft output noise can make the
+joint output alphabet much larger than that of thresholded codes. The saved
+distinct-code fraction is a coverage diagnostic, not a confidence certificate.
+
+The hard-code alphabet fraction uses a power-of-two scaling operation, avoiding
+overflow from explicitly converting $2^C$ to a float for very large C. The more
+useful counting coverage diagnostic here is observed distinct codes divided by B.
+
 The simulation code is written in PyTorch and runs on NVIDIA A100 GPUs. The memory footprint scales according to these primary operations:
+
+**Sparse ligand axis:** in current batch sampling, the physics ligand axis has width
+`S_batch = max(s_upper, largest realized mixture size in the batch)`, at most L.
+`s_upper` is the usual allocation width, not a hard support bound. Rare larger batches
+use more memory instead of silently discarding ligands. When `s_upper < L`, determining
+the width costs one scalar GPU→CPU synchronization. Memory estimates using full L
+remain conservative; estimates using only `s_upper` must allow for these overflow batches.
 
 1. **Ligand Generation & Distances:** $\mathcal{O}(B \cdot U \cdot D)$
    - Batch Size ($B$), Number of Units ($U$), Latent Dimension ($D$). 

@@ -195,6 +195,10 @@ reporting. Receptors are canonicalised on the way in — sorted as a multiset, o
 minimum-rotation under the interface model — so an explicitly listed receptor is the
 same object the gene-set path would have produced.
 
+The runner preserves `cell_receptors` when reconstructing the pool and weights from
+the saved config. The derived `cell_gene_sets` are for reporting in this path; they
+are not expanded again into all possible receptors.
+
 One receptor per cell is `tuple((r,) for r in RECEPTORS)`. With the list **sorted**, the
 pool is that same list and $W$ is exactly the identity — which is what
 `tasks/cells/equivalence` uses to check that cell mode reduces to the receptor model.
@@ -273,7 +277,8 @@ estimator caps size on the cells while only the physics cap sees the pool.
 
 The **drive** is the abundance-weighted open fraction:
 $S_{bc} = \sum_r W_{cr}\, p_{br}$ — plainly, *what fraction of this cell's receptors are
-open*, hence what fraction of its maximum current is flowing.
+open on average*, hence its expected normalized current when single-channel currents
+are equal. Finite-copy fluctuations around this expectation are not simulated.
 
 `threshold` (default): $A_{bc} = \sigma\big((S_{bc} - \theta)/T_{cell}\big)$.
 
@@ -281,8 +286,10 @@ open*, hence what fraction of its maximum current is flowing.
 
 `mean` feeds $S$ straight to the estimators. That is not wrong so much as a **different
 model**: it says the cell fires stochastically at a rate linear in its open fraction. The
-estimators then read the coin correctly — but the model now contains noise, and this
-project treats the output as deterministic.
+estimators then read that stochastic binary channel correctly. With `entropy='kt_mi'`,
+its conditional response entropy is removed from the objective, so this is a valid
+alternative if linear firing probability is the intended model. It is not a direct
+measurement of an analog current, nor a finite-copy channel-noise model.
 
 The defensible justification for the threshold is **not** biophysical sharpness (real f–I
 curves are often threshold-*linear*, not step-like). It is that a **binary code is a
@@ -298,11 +305,13 @@ a cell whose repertoire is 99.84% heteromeric would fire off its few broad, unse
 homomers; and with a large repertoire it **saturates toward 1** — nearly binary, but
 stuck ON.
 
-### Why `mean` is unusable here specifically
+### Why repertoire averaging can limit `mean`
 
-$S$ is an average over the repertoire, and averages concentrate, so it never approaches
-0 or 1. Every activity lands mid-range, every cell reads as a coin, and the reported
-entropy is almost entirely noise. Kept as a diagnostic only.
+$S$ is an average over the repertoire and can concentrate, reducing stimulus-dependent
+variation. Under entropy training, mid-range probabilities can inflate the score;
+under MI training that noise is subtracted. Concentration may still limit achievable
+MI, but does not make the estimator invalid. The cell tasks retain the thresholded
+readout as the selected model, rather than adding a mean-readout comparison campaign.
 
 ---
 
@@ -426,8 +435,9 @@ out of 20 while carrying exactly zero information**. Pinning it to the median co
 free parameter and is near-optimal anyway (exactly optimal for a single cell; the shortfall
 for the joint code is second-order against what the chemistry can do).
 
-The learnable flag is kept for that ablation, and is now safe to use *provided* the
-sharpness schedule of §9.9 runs — a deterministic cell has no 0.5 to park at.
+That observation was made with the entropy-only objective. Under `kt_mi`, constant
+0.5 responses have zero MI, so this particular false reward disappears. It does not
+guarantee a learnable threshold will optimize well; the pinned default is retained.
 
 ---
 
@@ -446,11 +456,16 @@ Phase 1 keeps gradients live everywhere while the chemistry arranges the drive a
 threshold; phase 2 hardens the readout. `cell_temperature` defaults to 0.01, leaving
 ~0.8% of $(b,c)$ pairs inside the transition band.
 
-**Deterministic cells are not a nicety — they are the condition under which the entropy
-objective is a valid proxy for information** (§07 §3b.6). This never bit the receptor
-picture because the receptor temperature already anneals until $p \in \{0,1\}$; cells add
-a *second* softness, and if $T_{cell}$ is comparable to the drive spread the reported
-entropy is almost all noise.
+Phase 2 reaches its final temperature on its last epoch. If phase 2 has just one
+epoch, that epoch uses the final temperature. Training also explicitly restores the
+final receptor and cell temperatures before saving and testing, so the saved readout
+matches the evaluation endpoint even for runs too short to complete both phases.
+
+Determinism is required for **entropy alone** to equal information. The new `kt_mi`
+objective removes conditional response entropy, so a soft endpoint is allowed.
+Annealing remains an architectural choice for the thresholded experiments, not a
+requirement of the MI estimator. Keep fixed numeric starting/final temperatures to
+study a fixed softness; calibration still controls the cell's physical drive scale.
 
 The known risk is phase-2 gradient starvation: once the cell is sharp, only samples inside
 the thin transition band pass gradient. Pinning $\theta$ to the median mitigates it — for
@@ -459,7 +474,47 @@ are. The two choices reinforce each other.
 
 ---
 
-## 9.10 Config quick reference
+## 9.10 Finite-copy receptor noise and expression laws (proposed, not implemented)
+
+MWC $p_r(x)$ is still an **opening probability**. Multiplying it by copy number and
+single-channel current gives the deterministic *mean* current. At fixed input and
+fixed receptor counts, a simple independent-channel snapshot model is
+
+$$O_{cr}\mid x,N_{cr}\sim\mathrm{Binomial}(N_{cr},p_r(x)),\qquad
+J_c=\sum_r i_r O_{cr},$$
+$$\mathbb E[J_c\mid x]=\sum_r i_rN_{cr}p_r(x),\qquad
+\operatorname{Var}(J_c\mid x)=\sum_r i_r^2N_{cr}p_r(x)[1-p_r(x)].$$
+
+This assumes independent channel openings, fixed conductance/driving voltage, and
+a snapshot, not correlated time samples. These are the usual independent-channel
+mean/variance relations; see [Goldwyn et al., 2011](https://pmc.ncbi.nlm.nih.gov/articles/PMC3279159/).
+Temporal averaging requires gating timescales, not just equilibrium MWC probabilities.
+
+For fixed total molecules per cell, allocating more copies to a type improves its
+relative sampling precision, while allocating them across more types changes tuning
+diversity. Different abundance vectors can yield different response curves even
+with the same gene set. Neither receptor diversity nor a homomer-first assembly
+order is automatically optimal for MI: redundancy, heteromer tuning, pooling, and
+noise determine the joint information. Compare expression laws at fixed cell and
+molecule budgets rather than assuming an ordering.
+
+Distinguish two sources of randomness: assembly could draw integer receptor counts
+once per cell (e.g. multinomial counts from assembly weights), whereas channel
+openings fluctuate for each exposure. Current `cell_stoichiometry='multinomial'`
+uses expected combinatorial weights, not sampled integer copies. Gene-set sampling
+and W are fixed during affinity optimization; this change does not learn an
+expression law or continuous gene abundances. Also, `cell_n_molecules` remains
+only a threshold-floor regularizer, not a finite-copy simulation parameter.
+
+To retain the current binary-output KT implementation, a future copy model must
+provide $a_c(x)=P(J_c>J_{threshold}\mid x)$ (or the averaged probability of a soft
+readout). Evaluating a sigmoid at the mean current is generally not the same.
+If cell-specific channel noise is independent conditional on x, these probabilities
+can feed KT directly. Analog current outputs or shared latent noise need a different
+conditional distribution/estimator. A soft sigmoid in `BinaryReceptor` also does
+not by itself enable the full MWC physics in `SimulationRunner`.
+
+## 9.11 Config quick reference
 
 ```python
 RunConfig(
@@ -480,7 +535,8 @@ RunConfig(
     cell_temperature=0.01,              # FRACTION of the live drive spread
     cell_phase_split=0.5,
     cell_recalibrate_every=25,
-    cell_n_molecules=1e4,               # receptor copy number; floors theta at 1/N
+    cell_n_molecules=1e4,               # threshold regularizer; floors theta at 1/N
+    entropy='kt_mi',                    # optimize MI, including at finite softness
 
     # --- performance ---
     use_composition=True,               # exact; default on

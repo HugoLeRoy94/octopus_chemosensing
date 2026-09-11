@@ -4,11 +4,56 @@ We now consider an array of $N$ receptors, and write the activity of this array 
 $$
 I(\mathcal{A};(c,\ell)) = H(\mathcal{A}) - H(\mathcal{A} | (c,\ell)),
 $$
-We consider the mapping between affinities, and activity as deterministic, noiseless: $H(A | (c,\ell)) = 0$.
-Thus we want to maximize 
+For a deterministic, noiseless binary mapping, $H(A | (c,\ell)) = 0$.
+Only in that limit can we instead maximize
 $$
-H(\mathcal{A}) = -\sum_\mathcal{A} p(\mathcal{A}) \log[p(\mathcal{A})] = \mathbb{E}\left[ \log[p(\mathcal{A})] \right].
+H(\mathcal{A}) = -\sum_\mathcal{A} p(\mathcal{A}) \log[p(\mathcal{A})] = -\mathbb{E}\left[ \log[p(\mathcal{A})] \right].
 $$
+
+### Stochastic binary responses (implemented with `entropy='kt_mi'`)
+
+Write $X$ for the complete sampled input and $Y\in\{0,1\}^C$ for the output
+array. `activity[b,c]` is $a_c(x_b)=P(Y_c=1\mid X=x_b)$, not an observed analog
+current. Assuming independent output noise **conditional on X**,
+
+$$P(Y=y\mid X=x)=\prod_c a_c(x)^{y_c}[1-a_c(x)]^{1-y_c},$$
+$$H(Y\mid X)=\mathbb E_X\sum_c h_2(a_c(X)),\qquad
+I(Y;X)=H(Y)-H(Y\mid X).$$
+
+The conditional term is analytic for each input; no repeated response draws are
+needed to train. `KTMutualInformationLoss` optimizes the KT lower bound on this MI
+directly (§05). Soft sigmoids are allowed at the endpoint. Identical response
+probabilities across all inputs give zero MI, including probabilities of 0.5.
+This removes the entropy-only incentive to produce noise, but does not guarantee
+faster convergence or prevent saturation and vanishing gradients.
+
+Here X includes concentration and any sampled coordinate/observation-noise
+realization. If the intended target is a **clean** stimulus S before that noise,
+the required channel is $P(Y\mid S)=\mathbb E_{X\mid S}P(Y\mid X)$.
+Shared input noise can correlate cells conditional on S, so subtracting the sum
+of binary entropies at each noisy input would give $I(Y;X)$, not $I(Y;S)$.
+Likewise, MI about the full sniff is distinct from MI about ligand identity alone.
+
+### Final evaluation by output counting
+
+`mutual_information_counting` draws independent $Y_c\sim\mathrm{Bernoulli}(a_c)$
+for each new input, counts the observed **joint output vectors**, and reports
+plug-in and Miller–Madow entropy estimates minus the analytic batch-average
+$H(Y\mid X)$. This avoids enumerating all $2^C$ states and avoids KT's pairwise
+cost. Both paths use the same probability clamp `[1e-6, 1-1e-6]`, including in
+the conditional term; near hard endpoints this represents a tiny numerical noise.
+
+Counting estimates are not certified bounds or confidence intervals. They can
+be negative after subtraction because of finite-sample bias; values are retained
+without clipping. The observed distinct-code fraction and sample count are saved
+to help assess coverage. Miller–Madow cannot repair a mostly unseen output alphabet.
+Increase the evaluation budget and check stability, especially when response
+noise spreads mass over many codes. KT bounds apply to the empirical input
+mixture, not automatically to the population channel.
+
+`codeword_entropy` remains a separate diagnostic: it thresholds $a_c>0.5$ and
+estimates the entropy of that **deterministic** map. Subtracting the stochastic
+response entropy from this hard-code entropy would mix different channels.
 
 ## 5. Threshold-Based Activation and Discrete Information
 

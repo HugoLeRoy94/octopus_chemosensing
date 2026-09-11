@@ -124,13 +124,16 @@ three private helpers so each concern is testable in isolation:
 
 | Helper | Returns | Notes |
 |---|---|---|
-| `_sample_masks(B)` | `((B,L) mask, (B,s_upper) sparse_idx)` | hierarchical draw; `sparse_idx` carries selected ligand indices |
-| `_sample_noisy_ligands(B, sparse_idx)` | `(B, s_upper, D)` | noisy coords for present ligands only; dummy slots zeroed |
-| `_compute_energies(v_ligands, receptor_indices)` | `(B,s_upper,U)` or `(B,s_upper,R,k)` | distance trick + kernel; second dim is now s_upper, not L |
+| `_sample_masks(B)` | `((B,L) mask, (B,S_batch) sparse_idx)` | hierarchical draw; all selected ligand indices retained |
+| `_sample_noisy_ligands(B, sparse_idx)` | `(B, S_batch, D)` | noisy coords for present ligands only; dummy slots zeroed |
+| `_compute_energies(v_ligands, receptor_indices)` | `(B,S_batch,U)` or `(B,S_batch,R,k)` | distance trick + kernel; composition binding uses the source axis instead |
 
-`s_upper` is a static bound computed once in `__init__`:
-`s_upper = min(L, (⌊μ_src + 4√μ_src⌋ + 1) × max_m)` covering the ~99.99th percentile of
-Poisson(mu_sources) × max_m without a per-batch GPU→CPU sync.
+`s_upper` is the usual allocation width computed once in `__init__`:
+`s_upper = min(L, (⌊μ_src + 4√μ_src⌋ + 1) × max_m)`. This Poisson-tail heuristic
+is not a support bound. Each batch uses `S_batch = max(s_upper, max_b S_b)` so rare
+large mixtures are retained in full and the physics agrees with the returned masks.
+When `s_upper < L`, finding this width requires one scalar GPU→CPU synchronization;
+when `s_upper == L`, no extra synchronization is needed. The width never exceeds L.
 For the default config (mu_sources=4, max_m=10): s_upper = 130 vs L = 2000, a **15× reduction**
 in the dominant einsum and its backward.  Padding slots carry global index L with concentration 0,
 contributing exp(−27) ≈ 0 to the logsumexp in physics — numerically invisible.
@@ -357,8 +360,11 @@ for information (§3b.6). Receptor-only runs keep the original 80%-of-training s
 
 The per-epoch measurement always evaluates at the FINAL sharpness, so the convergence
 curve during phase 1 already reports the honest hard-readout number.
+Phase 2 reaches its endpoint on its last training epoch (a one-epoch phase 2 uses
+the endpoint directly). After training, both temperatures are explicitly set to their
+evaluation endpoints before checkpointing and final testing, including very short runs.
 
-### 3b.6 Why the cell must be deterministic
+### 3b.6 Why entropy-only training needed deterministic cells
 
 The estimators of Stage 4 read every activity as the probability that a coin lands
 heads, and charge its binary entropy into the total. Decompose the reported entropy as
@@ -367,14 +373,14 @@ A cell sitting at $A = 0.5$ contributes a full bit of the first term and nothing
 second — the KT self-test `[3b]` in `bin_loss.py` shows this exactly, reporting $H = R$
 for an array of fair coins that responds to nothing.
 
-This never bit the receptor picture because the receptor temperature anneals until
-$p \in \{0, 1\}$, so $H(s \mid \text{sniff}) \approx 0$ and entropy $\approx$ information.
-Cells add a *second* softness, and if $T_{cell}$ is comparable to the spread of $S$ the
-reported entropy is almost entirely noise. Hence the phase-2 hardening above.
+Receptor annealing was intended to make $H(s\mid\text{sniff})\approx0$; cells add
+a second source of softness. The new `kt_mi` loss subtracts the conditional entropy
+and therefore permits soft response probabilities at the endpoint (Stage 4).
+The threshold tasks retain their hardening schedule as a model choice.
 
 Two consequences for the readout menu of §3b.3:
-- `'mean'` cannot escape this. $S$ is an average over the repertoire, and averages
-  concentrate, so it never approaches 0 or 1. Unusable with a binary estimator.
+- `'mean'` may concentrate around similar values across stimuli, limiting information.
+  It is valid with MI if interpreted as a binary firing probability proportional to drive.
 - `'noisy_or'` saturates toward 1 for large repertoires — nearly binary, but stuck ON.
 
 ### 3b.7 Two ways the threshold degenerates, and the two fixes
@@ -395,6 +401,10 @@ $10^{-286}$ open channels. Since the drive is a *fraction* of the cell's recepto
 are open, the number open is an integer $n = NS$ and $1/N$ is its resolution: below one
 open channel there is no state. $\theta$ is floored there (`cell_n_molecules`), which
 also fixes $T_{cell}$ for free — see §09 §9.8.1 for the full treatment and the numbers.
+
+This is a regularization rationale, not a physical discretization of the implemented
+drive: S is an **expected** open fraction and NS need not be an integer. Finite-copy
+fluctuations are not simulated; they require a separate noise model (§09.10).
 
 **(a) The threshold must not sit on a point mass — `median_threshold`.**
 When more than half the drives share one value (typically exactly 0, the sparse-code
@@ -473,14 +483,44 @@ on the C cells, while only the physics cap sees $R_{pool}$.
 Sampling happens **once**, in `SingleRunConfig.__post_init__`, which writes the
 resolved gene sets back into `cell_gene_sets` and the derived pool into
 `receptor_indices`. Both are persisted in `config.json`, so a run is exactly
-reproducible from it; `SimulationRunner._initialize` rebuilds $W$ from the stored gene
-sets and asserts the pool matches.
+reproducible from it; `SimulationRunner._initialize` rebuilds $W$ from the stored
+explicit `cell_receptors` when supplied, otherwise from the stored gene sets, and
+asserts the pool matches. Derived gene sets must not re-expand an explicit repertoire:
+a cell containing one heteromer must remain a one-receptor cell.
 
 ---
 
 ## Stage 4 — Loss Computation
 
 Loss modules are selected by `cfg.entropy` in `run.py::_build_loss`.
+
+### Full-input mutual information: `entropy='kt_mi'`
+
+`KTMutualInformationLoss.forward(activity)` returns the **negative KT MI lower
+bound**, using `compute_kt_entropy(..., return_mi=True)`. For independent Bernoulli
+outputs conditional on the full input X,
+
+$$H(Y\mid X)=B^{-1}\sum_{b,c}h_2(a_{bc}),\qquad
+\mathcal L=-I_{KT,lower}=B^{-1}\sum_i\log_2[B^{-1}\sum_j BC(i,j)].$$
+
+The loss computes the separation term directly: response noise is not rewarded.
+There is no sampling of binary outputs during backpropagation. The same probability
+clamp `[1e-6, 1-1e-6]` is used in KT, conditional entropy, and stochastic counting.
+`compute_entropy` remains an entropy measurement API even on this loss class.
+`entropy='kt'` retains the old entropy objective; the **cell equivalence and
+convergence scripts explicitly select `kt_mi`**. Other historical tasks are unchanged.
+
+`train_mutual_information` logs the actual training-batch objective in bits, including
+when periodic measurements are disabled. No `train_entropy` label is used for it.
+Budget resolution, checkpointed backward and compiled tiles are the same as for KT
+entropy. Soft final sigmoids are supported; a fixed receptor softness is obtained
+by setting numeric `initial_temperature == temperature`. In threshold cell mode,
+set numeric `cell_initial_temperature == cell_temperature` to keep the dimensionless
+readout softness fixed (calibration can still change its drive scale).
+
+X includes concentration and sampled observation noise, not just ligand identity.
+Information about a clean stimulus requires integrating over that noise inside
+the conditional channel; the present product-Bernoulli loss does not do that (§04).
 
 Every loss and every measurement consumes a `(B, N)` activity tensor and is agnostic
 to whether `N` counts receptors (Stage 3) or cells (Stage 3b) — the two pictures
@@ -643,13 +683,34 @@ The LR is damped 10× on warm-start to preserve learned representations.
 
 ## Stage 6 — Evaluation & Metrics (`run.py::SimulationRunner._eval_stats`)
 
-Evaluation runs under `torch.no_grad()` with `test_batch_size` samples.
-`_eval_stats` draws a single **mixture batch** (natural Bernoulli masks) before the
-measurement loop.  All metrics — including conditional-entropy and MI measurements —
-operate on this same batch.
+Evaluation runs under `torch.no_grad()` without autocast. KT entropy and MI,
+`conditional_entropy_response`, and both output-counting metrics use the **same full
+evaluation batch**, generated in chunks of `eval_chunk_size` (default: training batch).
+Conditional entropy is weighted by each chunk's actual sample count. KT keeps the
+probabilities and runs all pairs across chunks; requesting both H and I reuses the
+same pairwise result. Other legacy metrics, including identity/concentration grouping,
+use the first chunk only. `response_evaluation_samples` records the full sample count.
 
-When `eval_chunk_size < test_batch_size`, soft metrics use one chunk and hard codeword
-metrics are accumulated across all chunks (avoiding CUDA OOM on large eval budgets).
+`final_measurement_fns=None` inherits `measurement_fns`; otherwise it replaces that
+list only for the closing test. `final_test_batch_size=None` retains existing budget
+selection; a positive integer overrides the final budget, including with
+`per_epoch_measure=False`. The final test still makes ten independent repeats and
+saves each value in `test_results.json`.
+
+Example overrides for a larger final counting evaluation, without quadratic KT:
+
+```python
+entropy='kt_mi',
+measurement_fns=('mutual_information_kt', 'mutual_information_kt_upper',
+                 'conditional_entropy_response'),
+final_measurement_fns=('mutual_information_counting', 'codeword_entropy'),
+final_test_batch_size=65536,  # per repeat; increase and check statistical stability
+```
+
+Counting samples independent Bernoulli responses with a separate RNG, so adding it
+does not consume the world/training RNG stream. Counting-only evaluation stores CPU
+binary outputs and accumulates conditional entropy, without retaining soft activities
+or invoking KT. CPU unique-row counting still uses O(BC) memory and sorting (§06).
 
 `full_array_entropy` calls `loss_fn.compute_entropy(act, entropy_type=..., use_cache=False)`
 so evaluation always builds a fresh correlation-aware partition from the eval batch,
@@ -660,8 +721,12 @@ Available metrics (add to `measurement_fns` in config):
 | Key | Function | What it measures |
 |---|---|---|
 | `full_array_entropy` | `analysis_helper.full_array_entropy` | The loss's NATIVE joint-entropy estimator only (`loss_fn.compute_entropy` default: collision for a collision loss, blocked for annealed, blocked_corrected for blocked_to_corrected, kt for a kt loss). Logs a single `full_array_entropy` column. |
-| `entropy_collision` / `entropy_blocked` / `entropy_blocked_corrected` / `entropy_kt` / `entropy_kt_upper` | `analysis_helper.entropy_*` | Opt-in extra estimators, each logging one column (`full_array_entropy_collision` / `_blocked` / `_blocked_corrected` / `_kt` / `_kt_upper`). Add to `measurement_fns` to record estimators other than the loss's own (e.g. the `optimizer` task requests all to compare losses on a common footing). Each is a full extra evaluation. `entropy_kt` / `entropy_kt_upper` are computed on the soft assignment (not via `compute_entropy`, which `AnnealedEntropyLoss` rejects for `'kt'`). KT is all-pairs O(B²·R) with resolvable-entropy ceiling log₂(B); it is measured on the **full eval batch** `test_batch_size` (see below), generated in sub-batches and tiled internally so peak memory is bounded by the tile, not B — **no sample cap; only time grows (O(B²))**. `entropy_kt` is the Bhattacharyya **lower** bound, `entropy_kt_upper` the KL-divergence **upper** bound (clamped to R bits); together they bracket the true joint entropy H(s) — certified, and tight in the well-separated (optimized) regime. |
+| `entropy_collision` / `entropy_blocked` / `entropy_blocked_corrected` / `entropy_kt` / `entropy_kt_upper` | `analysis_helper.entropy_*` | Opt-in entropy estimators, logging `full_array_entropy_<name>`. KT lower (Bhattacharyya) and upper (KL, capped at R bits) bracket the empirical mixture entropy and use the full evaluation batch. Their separation term is capped at log₂(B); entropy also includes H_cond. Pairwise arithmetic is O(B²R), with O(BR + chunk·B + chunk²R) inference storage. Entropy and MI requests share the corresponding KT computation. |
 | `codeword_entropy` | `analysis_helper.codeword_entropy` | Hard plug-in + Miller-Madow entropy of binary codewords |
+| `conditional_entropy_response` | `analysis_helper.conditional_entropy_response` | Analytic mean sum of binary entropies, H(Y given full sampled X) |
+| `mutual_information_kt` | `analysis_helper.mutual_information_kt` | KT lower bound on I(Y;X), directly from the separation term |
+| `mutual_information_kt_upper` | `analysis_helper.mutual_information_kt_upper` | KL upper bound on I(Y;X), capped at C−H(Y given X) |
+| `mutual_information_counting` | `analysis_helper.mutual_information_counting` | Sample joint binary responses; report response entropy and MI, both plug-in and Miller–Madow, plus coverage diagnostics |
 | `mean_receptor_distance` | `analysis_helper.mean_receptor_distance` | Average pairwise latent-space distance between receptors |
 | `receptor_distances` | `analysis_helper.receptor_distances` | Full (R, R) pairwise distance matrix |
 | `conditional_entropy_ligand` | `analysis_helper.conditional_entropy_ligand` | (1/N_l) Σ H(A \| L_l) |
@@ -750,9 +815,11 @@ per-ligand MARGINAL average, NOT on the joint `full_array_entropy` scale.
 Conditioning on the *full* presence pattern M (samples grouped by identical mask via
 `torch.unique`) gives the exact chain-rule split `H(A) = I(A;M) + H(A|M)`: `identity_channel`
 is the composition channel I(A;M), `concentration_channel` is the concentration residual
-H(A|M) = I(A;c|M), and they sum to `full_array_entropy`. Use the reliance fractions
-`identity_channel / full_array_entropy` and `concentration_channel / full_array_entropy`
-(which sum to 1) to compare how much an architecture leans on identity vs concentration coding.
+H(A|M). This equals I(A;c|M) only for responses deterministic given mask and concentration;
+otherwise it also contains response noise (and possibly other input variation). These
+helpers use exact Shannon for non-collision losses, including `kt_mi`, so they sum to
+the exact first-chunk H(A), not necessarily the logged KT entropy bound. Exact state
+enumeration is practical for the six-cell convergence task but not large arrays.
 Reliable only when patterns repeat (single-ligand / low-`mu_ligands_per_source` sniffs, where M
 is the categorical ligand id); in dense mixtures rows are nearly all unique → H(A|M) collapses
 to 0 and I(A;M) → H(A) spuriously.
@@ -764,13 +831,20 @@ the number of distinct observed codewords, partially correcting this bias.
 **Post-hoc measurement (outside the pipeline):** `analysis_helper` exposes reusable
 primitives for re-measuring a **reloaded** checkpoint (via `plotlib.load_model`) without
 retraining — `sample_activity(env, physics, ri, n_samples)` (estimator-agnostic, chunked
-forward so memory is bounded), `kt_bracket(...)` (its KT lower/upper convenience), and
-`eval_batch_cap(free_bytes)` (the `(tile, B)` memory cap). `src.testscaling` orchestrates on
-top of these (walk sweeps → pick runs → choose test sizes → write `<sweep>/test_scaling.csv`);
-the per-task `tasks/*/scripts/test_scaling.py` are thin wrappers (`build_parser` +
-`sizes_from_args` + `run`) that just set defaults. Size strategy: `--test_sizes` (absolute),
-`--mult` (per-run multiples of the train batch B, e.g. `1 2 4 8 16`), or an auto ×4 ladder —
-to check the entropy-vs-samples curve has plateaued.
+forward so memory is bounded), `kt_bracket(...)` (KT lower/upper convenience), and
+`count_sampled_responses(...)` (streamed stochastic-output counting, returning response
+entropy and MI, both plug-in and Miller–Madow). `eval_batch_cap(free_bytes)` applies only
+to KT's `(tile, B)` working buffer. `src.testscaling` orchestrates on top of these (walk
+sweeps → pick runs → choose sizes → write CSV): `measurement='kt'` writes
+`<sweep>/test_scaling.csv`, while `measurement='counting'` writes the deliberately separate
+`<sweep>/test_counting.csv`. The latter keeps only sampled CPU response codes plus a running
+conditional-entropy sum, so it can exceed the KT cap but still needs O(BR) CPU counting
+memory. `tasks/receptors/fig1/scripts/test_final.py` defaults to this counting path; its CSV
+contains `response_entropy_{plugin,mm}` and
+`mutual_information_counting_{plugin,mm}`, along with H(Y|X) and coverage diagnostics.
+The per-task `tasks/*/scripts/test_scaling.py` wrappers use the KT default. Size strategy:
+`--test_sizes` (absolute), `--mult` (per-run multiples of the train batch B, e.g.
+`1 2 4 8 16`), or an auto ×4 ladder — to check an estimator's sample-size stability.
 
 ---
 
@@ -910,6 +984,8 @@ time based on array size R and entropy estimator:
   sampling. The single closing test then runs at **4×train** (regardless of `test_batch_size`/
   `test_max_batch`). Used by `fig1/het_casc.py`: the impact_of_heteromerization figure needs only the
   final KT bracket, and more samples can be obtained post-hoc from the saved `best_model.pt`.
+  An explicit `final_test_batch_size` overrides this 4×train default; final-only
+  counting via `final_measurement_fns` allows a larger budget without KT's pairwise cost.
 
 ---
 

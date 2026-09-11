@@ -15,10 +15,12 @@ To bypass this, we use **Continuous Relaxation** (or "Soft Binning"). We approxi
 
 $$p_r = \sigma\left( \frac{\ln(c) - \ln(EC_{50}^{(r,\ell)})}{T} \right)$$
 
-As $T \to 0$, this provides the smooth, continuous gradients necessary for backpropagation while faithfully representing discrete states.
+At finite T this gives differentiable firing probabilities; as $T\to0$ it approaches
+a deterministic step and gradients vanish away from its transition.
 
 ## 5.2 The True Shannon Entropy Limit
-Ideally, we want to maximize the Shannon Entropy of the array's joint probability distribution:
+Joint entropy is one component of MI. Maximizing it alone is appropriate only when
+the response is deterministic given the target input:
 $$H(\mathcal{A}) = -\sum_{\mathcal{A}} P(\mathcal{A}) \log_2 P(\mathcal{A})$$
 
 However, computing this requires evaluating the probability of all $2^R$ possible discrete states (for an array of $R$ binary receptors). For an array of 26 receptors, this means computing 67 million states per gradient step, which is computationally impossible and causes Out Of Memory (OOM) errors on modern GPUs.
@@ -53,9 +55,44 @@ $$H_{\text{cond}} = \frac{1}{B}\sum_b \sum_r h_2(A_{br}),\qquad h_2(a) = -a\log_
 
 $$\log \text{BC}(i,j) = \sum_r \log\!\Big(\sqrt{A_i A_j} + \sqrt{(1-A_i)(1-A_j)}\Big)\quad(\text{natural log})$$
 
-$H_{\text{cond}}$ is the mean per-component (conditional) entropy; the second term is the inter-component overlap. **All pairs are summed, the diagonal is kept**, and the inner sum is normalised by the **total** batch $B$. Because $\text{BC}(i,i)=1$, the self-term anchors each inner sum at $1/B$, so the resolvable-entropy ceiling is $\log_2 B$ (total batch) — contrast the collision estimator, whose adjacent-chunk / diagonal-masked scheme caps its ceiling at $\log_2(\texttt{chunk\_size})$. The two limits: $B$ distinct near-deterministic codewords give $H_{\text{KT}} \approx \log_2 B$ (+ small $H_{\text{cond}}$); $B$ identical sniffs at $A=0.5$ give a zero inter-component term and $H_{\text{KT}} = R$.
+$H_{\text{cond}}$ is the mean component entropy. **All pairs are summed, the diagonal
+is kept**, and the inner sum is normalized by total batch B. Since BC(i,i)=1,
+the separation term is at most $\log_2 B$. Entropy has the additional conditional
+term. Distinct near-deterministic codes give $H_{KT}\approx\log_2 B$; identical
+sniffs at A=0.5 give a zero separation term and $H_{KT}=R$.
 
-Complexity: $\mathcal{O}(B^2 R / \texttt{chunk})$ time (quadratic in total batch), $\mathcal{O}(\texttt{chunk}^2 R)$ peak memory (same scaling as the collision $(R,m,m)$ block). Implemented as two nested chunk loops (outer $i$-chunks, inner $j$-chunks spanning the whole batch) with `cat` + `logsumexp` over the full row, so gradients flow through every chunk.
+Complexity: $\mathcal{O}(B^2 R)$ arithmetic regardless of tile size. Inference retains
+$\mathcal{O}(\texttt{chunk}^2 R+\texttt{chunk}\,B+BR)$ working storage; training also
+retains the pairwise graph unless gradient checkpointing is enabled. Implemented
+as two nested chunk loops with `cat` + `logsumexp` over the full row.
+
+### KT mutual-information objective (`kt_mi`)
+
+The cell equivalence and convergence tasks now use `entropy='kt_mi'`:
+
+$$I_{\rm KT,lower}=-\frac1B\sum_i\log_2\left[\frac1B\sum_j\mathrm{BC}(i,j)\right],
+\qquad \mathcal L=-I_{\rm KT,lower}.$$
+
+This is exactly the entropy lower bound minus $H(Y\mid X)$, computed directly
+from the separation term to avoid cancellation between large entropies. The
+conditional entropy is **not detached** from an entropy objective: it is removed
+algebraically, so its noise-increasing gradient disappears. No stochastic output
+sampling is used in the loss. The original `entropy='kt'` retains its historical
+entropy objective for existing experiments. Both share batching, checkpointing,
+and optional compiled tiles. `KTMutualInformationLoss.compute_entropy` still
+returns entropy for compatibility with existing measurement helpers; its
+`forward` returns negative MI lower bound.
+
+The matching upper bound uses $\exp[-D_{KL}(p_i\Vert p_j)]$ instead of BC and is
+capped by $C-H(Y\mid X)$. Both separation terms are at most $\log_2 B$; **entropy**
+has the additional conditional term. Subtracting it does not remove the batch
+ceiling or the quadratic KT cost. Bounds concern the empirical input mixture,
+with the same `[1e-6, 1-1e-6]` probability clamp in every term.
+
+Constant responses at any probability have zero MI. Useful soft responses can
+have positive MI without becoming hard binary probabilities. This objective
+removes a false incentive; faster optimization of a particular cell architecture
+still needs to be measured. See §04 for the independence and target-input assumptions.
 
 ## 5.4 Correlation-Aware Blocked Entropy
 
@@ -114,6 +151,7 @@ This avoids the collision estimator entirely while still tightening the bound ov
 | `shannon` | Exact Shannon H | $-H$ |
 | `collision` | Collision H2 = $-\log_2 C$ | $C$ (collision probability, no log) |
 | `kt` | KT Bhattacharyya lower bound on Shannon $H$ | $-H_{\text{KT}}$ |
+| `kt_mi` | KT lower bound on full-input $I(Y;X)$ | $-I_{\text{KT,lower}}$ |
 | `blocked` | Blocked Shannon (upper bound) | $-H_{\text{blocked}}$ |
 | `blocked_corrected` | Blocked - cross-block MI (point estimate) | $-H_{\text{blocked\_corrected}}$ |
 | `annealed` | Blocked (measurement) | $-[(1-\lambda) H_{\text{blocked}} + \lambda H_{\text{collision}}]$ |
