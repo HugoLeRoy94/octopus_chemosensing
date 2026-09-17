@@ -848,6 +848,37 @@ The per-task `tasks/*/scripts/test_scaling.py` wrappers use the KT default. Size
 
 ---
 
+### Post-hoc cell response UMAP
+
+`analysis_helper.build_latent_umap` fits one chemical embedding of family samples,
+centres, fixed ligands and displayed receptor centroids. Family sampling uses a
+private NumPy generator; `random_state` also seeds UMAP. `plot_latent_umap` retains
+its existing call signature and `(fig, ax)` return, with an optional keyword-only
+`embedding` for reuse. Both landscape and response panels use the same drawing layer.
+
+The cell convergence analysis displays one homomer per gene (including genes absent
+from the sampled cell repertoires); labels are gene IDs. In the interface model its
+position is the homotypic pocket midpoint, not either individual face coordinate.
+The displayed homomers do not replace the simulated receptor pool.
+
+`cell_ligand_responses(env, physics, full_pool, readout, concentration=1.0)` computes
+an `(n_ligands, n_cells)` table using existing receptor physics and `cell_activity`.
+Each input contains one ligand at its saved coordinates and the specified positive
+concentration, without observation noise. Load `W`, `theta`, mode and the calibrated
+`readout_temperature` from the checkpoint; the config's relative `cell_temperature`
+is not a substitute. `plotlib.load_model` restores receptor endpoint temperature.
+
+`plot_cell_response_umap(embedding, responses, gene_sets, concentration=1.0)` draws
+one panel per cell with shared coordinates, axes and a 0–1 colour scale. Diamonds
+label ligand IDs and show firing probabilities; family clouds and numbered homomers
+provide geometric context. Responses are evaluated in the original latent space,
+never inferred from UMAP distances. This is a fixed-input response diagnostic, not
+an environmental average, MI estimate, or assigned latent vector for a cell.
+
+The convergence script saves `figures/cell_convergence_response_umap.png`.
+Theory §§01–06 retain their definitions: this adds visualization only, with no
+change to receptor physics, input sampling, information estimators or optimization.
+
 ## Sweep Architecture (`config.py::RunConfig + run.py::SweepRunner`)
 
 `RunConfig` accepts scalar or list values for every parameter field.
@@ -873,6 +904,13 @@ n_genes ascending and chain warm-started; at group boundaries n_genes decreases,
 which triggers a cold reset.  When `False`, steps run in natural order and every
 step starts cold.
 
+**Curation controls:** `curation_state` is a sweep-level scientific decision,
+independent of execution success.  Its default is `"review"`; scripts may choose
+`"keep"` (which requires a short `curation_label`) or `"delete"` when the purpose
+is already known.  A later decision in the repository's `curation.csv` overrides
+the config value.  These controls are saved in `sweep_config.json` but are never
+forwarded to `SingleRunConfig` and never become optimization axes.
+
 **Folder layout** (written by `IO.py::_run_rel_path`):
 ```
 {sweep_root}/{scalar_axis_1}_{val}/.../run_{YYYYMMDD_HHMMSS}/
@@ -881,6 +919,12 @@ Only scalar-valued axes appear as directory components (array-typed axes like
 `conc_mean` are recovered from `config.json`).  The timestamp leaf guarantees
 uniqueness when identical parameters are run more than once.  The execution
 timestamp is also stored as `run_timestamp` in `config.json`.
+
+Each new sweep also has a one-word `.state` file. `SweepLogger` writes `running`
+at construction; `SweepRunner.execute()` atomically replaces it with `complete`,
+`failed`, or `interrupted`.  This is machine-owned execution state, not a
+scientific keep/delete decision. Legacy sweeps without the marker are summarized
+from their completed-run count during curation.
 
 **`SweepLoader.iter_run_dirs()`** crawls the sweep root for `config.json` files
 rather than regenerating paths from the sweep config, making it robust to
@@ -992,8 +1036,9 @@ time based on array size R and entropy estimator:
 ## SQLite Run Index (`src/db.py`)
 
 `runs.db` is a derived lookup table kept in `base_folder`.  It does **not** change
-the folder structure or data files — `config.json` remains ground truth.  Delete
-and rebuild at any time with `backfill`.
+the folder structure or data files — run files plus the Git-tracked
+`curation.csv` remain ground truth. The user-facing `manage_data.py sync` command
+discards and fully rebuilds the index after mirroring cluster data locally.
 
 ### Schema
 
@@ -1003,6 +1048,8 @@ and rebuild at any time with `backfill`.
 | `sweep_name` | TEXT | Prefix of sweep dir name (before `_YYYYMMDD_HHMMSS`) |
 | `sweep_date` | TEXT | Timestamp regex `(\d{8}_\d{6})` from sweep dir |
 | `status` | TEXT | `complete` / `partial` / `missing` |
+| `curation_state` | TEXT | Sweep decision: implicit/configured `review`, or a `curation.csv` override of `keep` / `delete` |
+| `curation_label` | TEXT | Short human name for a kept sweep |
 | `run_mtime` | REAL | `os.path.getmtime` of run dir |
 | `git_hash` | TEXT | Short HEAD hash at index time, or NULL |
 | `created` / `modified` | TEXT | ISO timestamps (UTC); `created` is immutable after first insert |
@@ -1035,22 +1082,20 @@ to activate indexing.
 (e.g. `full_array_entropy_mean` → `full_array_entropy`) so the DataFrame
 schema matches the disk-crawl convention and analysis code is unchanged.
 
-### CLI
+### User-facing data workflow
 
 ```
-python -m src.db init       runs.db
-python -m src.db backfill   runs.db
-python -m src.db add-run    runs.db  path/to/run_dir
-python -m src.db sync       runs.db
-python -m src.db reconcile  runs.db  [--dry-run]
-python -m src.db delete     runs.db  relative/path  [--dry-run]
-python -m src.db move       runs.db  old/path  new/path
-python -m src.db alter      runs.db  add-col    col_name  TYPE
-python -m src.db alter      runs.db  remove-col col_name  [--dry-run]
-python -m src.db query      runs.db  [--where EXPR] [--cols c1,c2] [--limit N]
+python manage_data.py curate [goal]
+python manage_data.py sync [goal]
 ```
 
-`--dry-run` is supported on `reconcile`, `delete`, and `alter remove-col`.
+`curate` records sweep-level `keep` / `delete` decisions without touching data.
+`sync` applies confirmed delete decisions to the cluster and local copy, mirrors
+the cluster with `rsync --delete`, and fully rebuilds each affected index. Thus
+the cluster is authoritative for raw artifacts while `curation.csv` is
+authoritative for human decisions. Successful delete rows are then pruned from
+the catalog, while durable keep labels remain. The lower-level `src.db` API and CLI remain
+available for implementation/debugging, but are not part of normal operation.
 
 ---
 
