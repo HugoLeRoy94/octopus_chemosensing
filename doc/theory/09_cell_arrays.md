@@ -14,11 +14,11 @@ In the receptor picture the array is a list of $R$ receptors, each 5 gene indice
 cell picture the array is a list of $C$ **cells**, each defined only by the set of subunit
 genes $G_c$ it expresses — and a cell assembles **every receptor those genes allow**.
 
-Both produce a $(\text{sniffs} \times \text{channels})$ table, and every loss and
-measurement downstream consumes that table without asking what a channel is. The two
-pictures therefore differ at exactly one point in the code:
-`SimulationRunner._activity`. Nothing in `bin_loss.py`, `environment.py` or the
-measurement registry needed to change.
+Both produce a $(\text{sniffs} \times \text{channels})$ table. The response mapping
+differs at `SimulationRunner._activity`; existing receptor estimators keep the
+same interface. The optional grouped-cell estimator additionally uses the fixed
+abundance matrix to identify identical cells (§9.12); it does not change receptor
+physics or existing entropy meanings.
 
 **Why bother.** 45 cells is a far richer system than 45 receptors, because those cells
 draw on a pool of several thousand distinct receptors underneath. The entropy estimator
@@ -199,6 +199,12 @@ The runner preserves `cell_receptors` when reconstructing the pool and weights f
 the saved config. The derived `cell_gene_sets` are for reporting in this path; they
 are not expanded again into all possible receptors.
 
+In `RunConfig`, a tuple specifies one fixed array; a list of complete array tuples
+sweeps over explicit repertoires. JSON loading preserves both forms. Output folders
+use receptor counts rather than identities: `receptors_per_cell_2` for two listed
+receptors in every cell, or `receptors_per_cell_1-2-3` for unequal counts in cell
+order. The exact receptor lists remain in `config.json` and `sweep_config.json`.
+
 One receptor per cell is `tuple((r,) for r in RECEPTORS)`. With the list **sorted**, the
 pool is that same list and $W$ is exactly the identity — which is what
 `tasks/cells/equivalence` uses to check that cell mode reduces to the receptor model.
@@ -310,8 +316,9 @@ stuck ON.
 $S$ is an average over the repertoire and can concentrate, reducing stimulus-dependent
 variation. Under entropy training, mid-range probabilities can inflate the score;
 under MI training that noise is subtracted. Concentration may still limit achievable
-MI, but does not make the estimator invalid. The cell tasks retain the thresholded
-readout as the selected model, rather than adding a mean-readout comparison campaign.
+MI, but does not make the estimator invalid. The cell equivalence and convergence tasks
+use `mean`: equivalence then reduces exactly to the receptor model when $W=I$, while
+convergence tests the repertoire average without threshold-calibration effects.
 
 ---
 
@@ -547,3 +554,56 @@ RunConfig(
 Setting `cell_receptors`, `cell_gene_sets` **or** `n_cells` switches the array to cell
 mode (`cell_receptors` wins over `cell_gene_sets` if both are given);
 `n_receptors` / `receptor_sampling_*` are then ignored and `receptor_indices` is derived.
+
+
+## 9.12 Exact information by grouping identical cells
+
+Enable with `entropy="grouped_mi"`. The runner builds
+`src/grouped_loss.py::GroupedCellMutualInformationLoss` from the resolved `W`.
+Exact row equality determines groups; same genes with different abundances or
+explicit repertoires are not automatically equivalent. Shared readout parameters
+are essential. Approximately similar activities are never clustered.
+
+The estimator keeps the existing `(B,C)` activity interface and averages
+probabilities within each structurally identical group (distributing gradients
+symmetrically across copies). The number of independent cell responses is retained
+as the group multiplicity. It enumerates joint binomial counts, not labeled binary
+patterns. See §04 for the loss and entropy reconstruction; §08.7 gives the bounds.
+No changes to receptor assembly, mean/threshold readout, or noise assumptions occur.
+
+```python
+entropy="grouped_mi",
+cell_grouped_max_states=65536,
+measurement_fns=("grouped_information", "full_array_entropy",
+                 "conditional_entropy_response", "codeword_entropy"),
+```
+
+`grouped_information` reports:
+
+| Saved key | Meaning |
+|---|---|
+| `grouped_count_entropy` | $H(\mathbf K)$ |
+| `grouped_count_conditional_entropy` | $H(\mathbf K\mid X)$ |
+| `grouped_label_entropy` | $D=\mathbb E\sum_j\log_2\binom{n_j}{K_j}$ |
+| `response_entropy_grouped` | Full labeled-response $H(Y)=H(\mathbf K)+D$ |
+| `conditional_entropy_response_grouped` | Full $H(Y\mid X)=H(\mathbf K\mid X)+D$ |
+| `mutual_information_grouped` | $I(X;Y)=I(X;\mathbf K)$ |
+| `grouped_n_groups`, `grouped_n_states` | $J$ and $S=\prod_j(n_j+1)$ |
+| `grouped_count_entropy_upper` | $\log_2 S$, an alphabet entropy bound, not an MI estimate |
+
+`full_array_entropy` still reports $H(Y)$, never count entropy. The existing
+`conditional_entropy_response` remains the sum of individual binary entropies and
+agrees with its reconstructed grouped counterpart. A receptor-only config rejects
+`grouped_mi` and `grouped_information`; old losses and defaults are unchanged.
+
+The measurement can also be requested while training cells with `kt_mi` or another
+loss: the runner creates a separate W-based grouped evaluator. In either case it
+uses the full evaluation budget, streaming probability sums across input chunks.
+The grouped loss's identity/concentration helpers use reconstructed full Shannon
+entropy, avoiding binary enumeration while retaining their established meanings.
+Those conditional helpers still operate on the first evaluation chunk.
+
+`cell_grouped_max_states` rejects oversized alphabets before allocation. It can
+be increased explicitly, but memory also depends on the input batch. If many cells
+have unique repertoires, grouping provides little or no saving; use KT or counting
+when exact count enumeration is too large. See §06 for costs and batching.

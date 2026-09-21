@@ -2,6 +2,36 @@
 
 Optimizing combinatorial receptor arrays in high-dimensional environments frequently encounters the "Curse of Dimensionality." This document outlines the physical GPU memory limits of the simulation and the architectural fallbacks implemented to avoid Out Of Memory (OOM) errors.
 
+## Grouped-cell count enumeration
+
+`entropy='grouped_mi'` enumerates $S=\prod_j(n_j+1)$ count states for $J$
+groups of identical cells, instead of $2^C$ labeled binary states. Main cost:
+$O(BC+BSJ)$ time and $O(BC+BS+SJ)$ storage; count-state construction is vectorized,
+and the estimator avoids a $(B,S,J)$ broadcast. Receptor-pool physics is unchanged.
+The current readout still emits all $C$ probabilities for compatibility with
+existing diagnostics; the estimator reduces these to $J$ group probabilities.
+
+Training retains a $(B,S)$ table for differentiation. Auto batch sizing uses
+$S$, a fourfold float32 memory allowance, and the existing conservative physics
+allowance. The heuristic target is $\max(512,100S)$ samples; it is not a coverage
+guarantee. `cell_grouped_max_states=65536` is an allocation guard, not a full memory
+budget; an explicit batch must still fit. `recompute_backward` still applies to
+cell physics, not to this estimator's joint-count table.
+
+`grouped_information` evaluation streams `eval_chunk_size` inputs at a time,
+accumulating an $S$-entry marginal probability sum and a scalar conditional-entropy
+sum. It calculates entropy **after** combining chunks, never averages their marginal
+entropies. Peak estimator memory is $O(bS+SJ+bC)$ for chunk size $b$, independent of
+total evaluation samples. No output bits or full-batch activities are retained
+unless another requested measurement needs them. Requesting KT alongside it still
+incurs KT's pairwise cost; requesting counting still retains sampled outputs.
+
+For the ten-cell, three-gene sweep, $S$ is 72, 80, and 11 at one, two, and three
+genes per cell. With no duplicate repertoires, $S=2^C$, so this is not a general
+cure for exponentially large output alphabets. The $\log_2 B$ empirical-input MI
+ceiling and finite-environment-sampling bias remain; streaming makes larger $B$
+feasible, rather than removing the statistical limit.
+
 ## 6.1 Scaling & Memory Footprints
 
 **MI training and final counting (2026-09-11):** `entropy='kt_mi'` uses the same

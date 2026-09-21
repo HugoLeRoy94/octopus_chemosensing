@@ -522,9 +522,10 @@ X includes concentration and sampled observation noise, not just ligand identity
 Information about a clean stimulus requires integrating over that noise inside
 the conditional channel; the present product-Bernoulli loss does not do that (§04).
 
-Every loss and every measurement consumes a `(B, N)` activity tensor and is agnostic
-to whether `N` counts receptors (Stage 3) or cells (Stage 3b) — the two pictures
-differ only at `SimulationRunner._activity`. Read `R` below as "number of channels
+Losses and measurements consume a `(B, N)` activity tensor. Existing estimators
+are agnostic to whether `N` counts receptors or cells. The optional `grouped_mi`
+loss additionally requires the fixed cell abundance matrix to identify identical
+cells; it is rejected in receptor mode. Read `R` below as "number of channels
 in the array": it is `C` in cell mode.
 
 ### 4a. `DiscreteExactLoss` (`bin_loss.py`) — maximize joint array entropy
@@ -596,6 +597,25 @@ Stays within the Shannon family while tightening the bound over training. A
 
 Both annealed losses receive `(activity, epoch, epochs)` in `_train` and provide
 `compute_entropy(activity, entropy_type)` for measurement helpers.
+
+### 4b.1 `GroupedCellMutualInformationLoss` (`grouped_loss.py`) — exact cell MI
+
+Select `entropy='grouped_mi'`. During initialization, the runner identifies
+exactly equal rows of the cell abundance matrix and records their multiplicities
+$n_j$. It caches the $S=\prod_j(n_j+1)$ joint count states and their binomial
+multiplicities. `cell_grouped_max_states` (default 65,536) guards allocation; exceeding
+it raises an error rather than silently changing estimator. Groups never come from
+approximately equal sampled activities. Shared cell readout parameters and
+conditionally independent Bernoulli outputs make this reduction exact.
+
+For each `(B,C)` activity batch, vectorized reductions give group probabilities,
+then matrix products evaluate the joint binomial log probabilities. Training
+minimizes $-[H(\mathbf K)-H(\mathbf K\mid X)]$, exactly the full-response MI for
+the empirical input mixture. The same KT/counting probability clamp is used.
+`compute_entropy` reconstructs labeled-response $H(Y)$ by adding the expected
+log multiplicity, so existing entropy measurements keep their meaning (§04).
+No receptor-only path or response physics changes. Training logs
+`train_mutual_information`, including when periodic measurement is disabled.
 
 ### 4c. `MaximizeMutualInformationLigandLoss` (`family_mi_loss.py`) — MI(array; mixture)
 
@@ -716,12 +736,25 @@ or invoking KT. CPU unique-row counting still uses O(BC) memory and sorting (§0
 so evaluation always builds a fresh correlation-aware partition from the eval batch,
 never reading or writing the training cache.
 
+**Grouped evaluation:** `grouped_information` uses the full evaluation batch and
+accumulates joint count probabilities plus conditional-entropy sums across input
+chunks. Entropy is taken after combining probabilities. It returns count entropy,
+count conditional entropy, expected label entropy, reconstructed full response
+entropy and conditional entropy, and MI, plus group/alphabet sizes and the count
+entropy ceiling (§09.12 lists keys). Under `grouped_mi`, `full_array_entropy` also
+uses this full-batch calculation and returns $H(Y)$, never $H(\mathbf K)$.
+With other cell losses, requesting `grouped_information` builds a separate grouped
+evaluator without changing training or the native `full_array_entropy` estimator.
+It is rejected in receptor-only mode. No output sampling or pairwise KT work occurs
+unless separately requested by another measurement.
+
 Available metrics (add to `measurement_fns` in config):
 
 | Key | Function | What it measures |
 |---|---|---|
 | `full_array_entropy` | `analysis_helper.full_array_entropy` | The loss's NATIVE joint-entropy estimator only (`loss_fn.compute_entropy` default: collision for a collision loss, blocked for annealed, blocked_corrected for blocked_to_corrected, kt for a kt loss). Logs a single `full_array_entropy` column. |
 | `entropy_collision` / `entropy_blocked` / `entropy_blocked_corrected` / `entropy_kt` / `entropy_kt_upper` | `analysis_helper.entropy_*` | Opt-in entropy estimators, logging `full_array_entropy_<name>`. KT lower (Bhattacharyya) and upper (KL, capped at R bits) bracket the empirical mixture entropy and use the full evaluation batch. Their separation term is capped at log₂(B); entropy also includes H_cond. Pairwise arithmetic is O(B²R), with O(BR + chunk·B + chunk²R) inference storage. Entropy and MI requests share the corresponding KT computation. |
+| `grouped_information` | `GroupedCellMutualInformationLoss` via runner streaming | Exact joint count enumeration; separate count entropies, reconstructed full response entropies, MI, and alphabet diagnostics (§09.12). Cell-only. |
 | `codeword_entropy` | `analysis_helper.codeword_entropy` | Hard plug-in + Miller-Madow entropy of binary codewords |
 | `conditional_entropy_response` | `analysis_helper.conditional_entropy_response` | Analytic mean sum of binary entropies, H(Y given full sampled X) |
 | `mutual_information_kt` | `analysis_helper.mutual_information_kt` | KT lower bound on I(Y;X), directly from the separation term |
@@ -818,8 +851,11 @@ is the composition channel I(A;M), `concentration_channel` is the concentration 
 H(A|M). This equals I(A;c|M) only for responses deterministic given mask and concentration;
 otherwise it also contains response noise (and possibly other input variation). These
 helpers use exact Shannon for non-collision losses, including `kt_mi`, so they sum to
-the exact first-chunk H(A), not necessarily the logged KT entropy bound. Exact state
-enumeration is practical for the six-cell convergence task but not large arrays.
+the exact first-chunk H(A), not necessarily the logged KT entropy bound. With
+`grouped_mi`, these helpers reconstruct full Shannon entropy through count
+enumeration, avoiding $2^C$ binary states. They still use the first chunk, which
+may differ from the full evaluation budget. Without grouping, exact binary state
+enumeration is practical for small arrays but not large ones.
 Reliable only when patterns repeat (single-ligand / low-`mu_ligands_per_source` sniffs, where M
 is the categorical ligand id); in dense mixtures rows are nearly all unique → H(A|M) collapses
 to 0 and I(A;M) → H(A) spuriously.
@@ -891,6 +927,9 @@ Fields whose values are inherently arrays (`conc_mean`, `conc_std`,
 uniformly identifies every axis without special-casing. `cell_gene_sets` is nested
 one level deeper (a tuple of gene tuples) and so has its own round-trip handling
 (`_NESTED_TUPLE_FIELDS`).
+`cell_receptors` is three levels deep (cells → receptors → subunits): a tuple
+defines one fixed array, and a list of these tuples defines a zipped sweep axis.
+JSON loading restores this distinction from the nesting depth.
 
 Concentration parameters are supplied **directly** as tuples in the config (no
 range-based RNG sampling).  To obtain multiple statistically independent runs,
@@ -915,8 +954,13 @@ forwarded to `SingleRunConfig` and never become optimization axes.
 ```
 {sweep_root}/{scalar_axis_1}_{val}/.../run_{YYYYMMDD_HHMMSS}/
 ```
-Only scalar-valued axes appear as directory components (array-typed axes like
-`conc_mean` are recovered from `config.json`).  The timestamp leaf guarantees
+Scalar-valued axes appear as directory components; array-typed axes like
+`conc_mean`, `cell_gene_sets`, and `receptor_indices` are recovered from
+`config.json`. Explicit `cell_receptors`, whether fixed or swept, instead use
+`receptors_per_cell_2` when every cell lists two receptors, or
+`receptors_per_cell_1-2-3` for different counts in cell order. These counts refer
+to listed receptor types, not molecule copy numbers. The full receptor identities
+remain in both saved configs. The timestamp leaf guarantees
 uniqueness when identical parameters are run more than once.  The execution
 timestamp is also stored as `run_timestamp` in `config.json`.
 
@@ -963,6 +1007,13 @@ the array from receptors to cells; `receptor_indices` is then derived and
 `test_batch_size="auto"` in `SingleRunConfig` / `RunConfig` to have sizes resolved at init
 time based on array size R and entropy estimator:
 
+- **Grouped cell MI**: use $S=\prod_j(n_j+1)$ from the abundance-based groups,
+  not $2^C$. Target `max(512, 100*S)` samples, capped by
+  `budget // (S*4*4)` and the conservative physics cap. This target is a sampling
+  heuristic, not an accuracy guarantee. Full evaluation streams input chunks;
+  the final auto target is `max(512, 100*S)` with `test_max_batch` honored, and the
+  per-epoch budget is at most four times training. Existing explicit batch sizes
+  and `final_test_batch_size` overrides take precedence.
 - **Shannon**: `B_train = max(512, 2^R)` — one sample per histogram bin for good coverage.
   Memory cap: the soft-assignment tensor has shape `(B, 2^R)` float32; budget is
   `B × 2^R ≤ 2^35` floats (~128 GiB), yielding `B_max = 2^(35−R)` (~10^6 at R = 15 on A100).

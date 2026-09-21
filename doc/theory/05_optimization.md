@@ -94,6 +94,28 @@ have positive MI without becoming hard binary probabilities. This objective
 removes a false incentive; faster optimization of a particular cell architecture
 still needs to be measured. See §04 for the independence and target-input assumptions.
 
+## 5.3c Exact grouped-cell MI (`grouped_mi`)
+
+`src/grouped_loss.py::GroupedCellMutualInformationLoss` minimizes
+$-[H(\mathbf K)-H(\mathbf K\mid X)]$, with $K_j$ the binomial active-cell count
+among $n_j$ identical cells (§04). The groups are determined once from exactly
+equal abundance rows. Count-state probabilities and their gradients are computed
+with vectorized log-probability matrix products; there is no stochastic output
+sampling and no pairwise-input bound. Probabilities are clamped as in KT.
+
+For $J$ groups and $S=\prod_j(n_j+1)$ joint count states, arithmetic is
+$O(BC+BSJ)$ and storage $O(BC+BS+SJ)$. Reducing labeled cell probabilities to
+group means distributes gradients symmetrically across equivalent copies.
+The response model, receptor physics, and number of independent cell draws are
+unchanged. This loss is cell-only and opt-in. `compute_entropy` returns full
+$H(Y)=H(\mathbf K)+D$, preserving the established entropy API.
+
+`cell_grouped_max_states` (default 65,536) rejects an oversized count alphabet
+before allocation; it does not automatically approximate or change the loss.
+With no repeated cells, $S=2^C$ and there is no enumeration saving. Batch size
+still limits empirical-input MI to $\log_2 B$, and population estimates require
+sample-budget convergence checks even though output enumeration is exact.
+
 ## 5.4 Correlation-Aware Blocked Entropy
 
 The blocked Shannon estimator partitions the $R$ receptors into blocks of at most `block_size` receptors, computes exact Shannon entropy within each block, and sums under a between-block independence assumption:
@@ -152,6 +174,7 @@ This avoids the collision estimator entirely while still tightening the bound ov
 | `collision` | Collision H2 = $-\log_2 C$ | $C$ (collision probability, no log) |
 | `kt` | KT Bhattacharyya lower bound on Shannon $H$ | $-H_{\text{KT}}$ |
 | `kt_mi` | KT lower bound on full-input $I(Y;X)$ | $-I_{\text{KT,lower}}$ |
+| `grouped_mi` | Exact empirical-input cell MI through joint binomial counts | $-[H(\mathbf K)-H(\mathbf K\mid X)]$ |
 | `blocked` | Blocked Shannon (upper bound) | $-H_{\text{blocked}}$ |
 | `blocked_corrected` | Blocked - cross-block MI (point estimate) | $-H_{\text{blocked\_corrected}}$ |
 | `annealed` | Blocked (measurement) | $-[(1-\lambda) H_{\text{blocked}} + \lambda H_{\text{collision}}]$ |

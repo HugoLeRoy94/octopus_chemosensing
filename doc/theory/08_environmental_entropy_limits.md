@@ -15,6 +15,12 @@ temperature.
 
 ## 1. The Two Ceilings
 
+This section concerns deterministic outputs. Stochastic cell outputs and their
+count representation have different entropy bounds; see the separate §7 below.
+Input-entropy inequalities here require a discrete input (or an explicitly
+discretized concentration); continuous differential entropy is not an upper
+bound on discrete output entropy.
+
 The array activity $\mathcal{A}$ is a **deterministic, noiseless** function of the
 environmental input (the mixture $\{c_\ell\}$). Two hard bounds follow immediately.
 
@@ -286,3 +292,94 @@ influence I'd expect, to guide which to probe next.
    correlation-structure effects from mean-size effects.
 4. Gamma-distributed frequencies — realism + natural empty-mixture prevention.
 5. Everything else — robustness / discussion items.
+
+
+## 7. Cell arrays: stochastic responses, grouping, and entropy bounds
+
+### 7.1 One bit per binary observation, not per receptor type
+
+Let $Y\in\{0,1\}^C$ be the labeled responses of $C$ cells. Irrespective of
+whether their responses are stochastic,
+$$H(Y)\le C\quad\text{bits},\qquad I(X;Y)=H(Y)-H(Y\mid X)\le C.$$
+A gene or receptor type can be represented by many independent cell observations.
+There is no one-bit-per-gene bound on their combined stochastic information.
+Independence here is conditional on the complete input $X$; shared unmodeled
+response noise invalidates the binomial reduction below.
+
+### 7.2 The count alphabet and its upper bound
+
+Partition cells into $J$ groups with identical firing probabilities for every
+input. In the current implementation this is guaranteed by identical receptor
+abundance rows $W_{c,:}$ and shared readout parameters. A group of $n_j$ cells has
+an active-cell count
+$$K_j\mid X=x\sim\operatorname{Binomial}(n_j,p_j(x)).$$
+It can take $n_j+1$ values. The joint count vector therefore has
+$S=\prod_j(n_j+1)$ possible values, giving
+$$\boxed{H(\mathbf K)\le\log_2 S=\sum_j\log_2(n_j+1).}$$
+This is the count-output counterpart of the one-bit bound for a single binary
+output: **at most $\log_2(n_j+1)$ bits of count entropy per group**. Equality
+requires a uniform joint count distribution; the biophysics and input ensemble
+need not permit it. Correlations between groups can lower the entropy.
+
+In the ten-cell, three-gene expression example:
+
+| Genes expressed per cell | Group multiplicities | Count states $S$ | Bound on $H(\mathbf K)$ |
+|---|---|---:|---:|
+| 1 | 2, 5, 3 | 72 | 6.170 bits |
+| 2 | 3, 3, 4 | 80 | 6.322 bits |
+| 3 | 10 | 11 | 3.459 bits |
+
+These are alphabet ceilings, not observed entropies or achievable MI predictions.
+At one gene per cell, $G$ represented genes with exactly $n$ copies each give
+$H(\mathbf K)\le G\log_2(n+1)$. With coexpression, groups correspond to
+repertoires rather than individual genes, so this per-gene expression no longer
+applies directly.
+
+### 7.3 Entropy changes under grouping; mutual information does not
+
+Given $\mathbf K$, all labeled arrangements with those counts are equally likely,
+independent of stimulus. Define
+$$D=\mathbb E_{\mathbf K}\sum_j\log_2\binom{n_j}{K_j}.$$
+Then
+$$H(Y)=H(\mathbf K)+D,\qquad H(Y\mid X)=H(\mathbf K\mid X)+D,$$
+$$\boxed{I(X;Y)=I(X;\mathbf K)=H(\mathbf K)-H(\mathbf K\mid X).}$$
+The count entropy ceiling must not be compared directly with full labeled
+response entropy: these are different random variables. Existing entropy APIs
+continue to report $H(Y)$, including when it is reconstructed using grouping.
+
+A noise-aware information bound is
+$$\boxed{I(X;Y)\le\sum_j\log_2(n_j+1)-H(\mathbf K\mid X),}$$
+where
+$$H(\mathbf K\mid X)=\mathbb E_X\sum_j
+H[\operatorname{Binomial}(n_j,p_j(X))].$$
+This bound depends on the channel's response noise and need not be attainable.
+A constant $p_j(x)=1/2$ can produce substantial count entropy but no information
+about $X$. Thus maximizing count entropy alone is not the grouped MI objective.
+
+For a discrete stimulus label $M$, also $I(M;Y)\le H(M)$. A single family with
+$L$ equally likely singleton ligands still has up to $\log_2 L$ bits of ligand
+identity, despite having zero family-identity entropy. Continuous concentration
+information is not bounded by $\log_2 L$, nor by its differential entropy.
+
+### 7.4 Deterministic and infinite-copy limits
+
+If $p_j(x)\in\{0,1\}$, group $j$ can output only 0 or $n_j$. Consequently
+$H(\mathbf K)=I(X;\mathbf K)\le J$ bits: repeated deterministic cells add no
+information. This recovers one bit per distinct response type, with equality
+requiring independent, balanced group responses.
+
+For stochastic cells, $K_j/n_j\to p_j(X)$ as $n_j\to\infty$. Unlimited copies
+can resolve a continuously varying probability arbitrarily precisely, so no
+finite universal per-gene MI ceiling exists in the ideal continuous-input model.
+For finitely many stimuli, information remains bounded by their discrete entropy;
+inputs giving identical probabilities remain indistinguishable. The deterministic
+and infinite-copy limits are therefore different. Finite numerical precision and
+the implemented probability clamp further restrict the represented channel.
+
+### 7.5 Estimation limits remain
+
+`grouped_mi` computes exact count-state probabilities for a finite input batch,
+not an exact environmental integral. Its empirical mixture has $B$ input atoms,
+so its MI cannot exceed $\log_2 B$, even when $\log_2 S$ is larger. Population MI
+requires checking convergence with increasing independent input samples. Grouping
+reduces computational cost without removing this sampling limitation (§06).

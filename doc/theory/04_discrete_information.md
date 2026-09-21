@@ -55,6 +55,50 @@ mixture, not automatically to the population channel.
 estimates the entropy of that **deterministic** map. Subtracting the stochastic
 response entropy from this hard-code entropy would mix different channels.
 
+### Exact grouping of identical cells (`entropy='grouped_mi'`)
+
+Let group $j$ contain $n_j$ cells with the same abundance row $W_{c,:}$ and
+shared readout parameters. Their probabilities $p_j(x)$ are identical for every
+input, and their binary draws remain independent conditional on $X$. Grouping
+is structural, not a clustering of approximately similar sampled responses.
+Define $K_j$ as the number of active cells in group $j$:
+
+$$P(K_j=k\mid x)=\binom{n_j}{k}p_j(x)^k[1-p_j(x)]^{n_j-k},$$
+$$P(\mathbf K=\mathbf k\mid x)=\prod_j P(K_j=k_j\mid x).$$
+
+Groups need not be independent after averaging over inputs. The estimator
+therefore enumerates the **joint** count alphabet, of size
+$S=\prod_j(n_j+1)$, and averages its probabilities over the input batch.
+It computes $I(X;\mathbf K)=H(\mathbf K)-H(\mathbf K\mid X)$ analytically;
+there are no sampled output bits and no Miller–Madow correction. This is exact
+for the empirical input mixture, not an exact integration over the population
+of environmental inputs. Like any $B$-component empirical-input MI, it cannot
+exceed $\log_2 B$.
+
+**Entropy is not invariant under grouping; MI is.** Given a count vector, all
+$\prod_j\binom{n_j}{K_j}$ labeled response patterns are equally likely, independent
+of $X$. With
+$$D=\mathbb E_{\mathbf K}\sum_j\log_2\binom{n_j}{K_j},$$
+$$H(Y)=H(\mathbf K)+D,\qquad H(Y\mid X)=H(\mathbf K\mid X)+D,$$
+$$I(X;Y)=I(X;\mathbf K).$$
+
+`GroupedCellMutualInformationLoss.compute_entropy` returns reconstructed **full
+labeled-response entropy** $H(Y)$; its forward loss is $-I(X;\mathbf K)$.
+`grouped_count_entropy` and `grouped_count_conditional_entropy` explicitly refer
+to counts. `response_entropy_grouped` and
+`conditional_entropy_response_grouped` include $D$. No existing receptor entropy
+API is redefined, and the runner rejects grouped mode for receptor-only configs.
+The same `[1e-6, 1-1e-6]` probability clamp as KT/counting is used.
+
+For two identical cells and equally likely stimuli giving $p=0$ and $p=1/2$,
+the unclamped labeled probabilities are $(5/8,1/8,1/8,1/8)$ and count probabilities
+are $(5/8,1/4,1/8)$. Thus $H(Y)=1.548795$, $H(\mathbf K)=1.298795$,
+$H(Y\mid X)=1$, $H(\mathbf K\mid X)=0.75$, and both MI values equal
+$0.548795$ bits. The discarded $D=0.25$ bits describe which equivalent cell fired.
+The numerical clamp introduces a tiny endpoint difference in the implementation.
+
+See §08.7 for cell entropy bounds and §09.12 for configuration and measurements.
+
 ## 5. Threshold-Based Activation and Discrete Information
 
 In many sensory systems, downstream neural processing relies on highly thresholded, binned, or even binary signals (e.g., a neuron firing an action potential or remaining silent). Optimizing a receptor array for continuous outputs (differential entropy) yields a fundamentally different geometry than optimizing for discrete, thresholded outputs (Shannon entropy).
