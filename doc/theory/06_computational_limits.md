@@ -2,6 +2,33 @@
 
 Optimizing combinatorial receptor arrays in high-dimensional environments frequently encounters the "Curse of Dimensionality." This document outlines the physical GPU memory limits of the simulation and the architectural fallbacks implemented to avoid Out Of Memory (OOM) errors.
 
+## Grouped KT and sampled counts without joint enumeration
+
+`CellGrouping` stores group identities, multiplicities, and flat individual
+binomial supports with $C+J$ entries. Only the exact estimator constructs
+$S=\prod_j(n_j+1)$ joint states; computing this integer for diagnostics does not
+allocate an $S$-entry tensor.
+
+`grouped_kt_mi` shares the existing weighted KT kernels: $O(BC+B^2J)$ work and
+$O(BJ+mB+m^2J)$ estimator inference storage for tile size $m$, in addition to
+the current cell-readout/physics arrays. Checkpointed backward recomputes pairwise
+tiles as in ordinary KT. Auto sizing uses $J$ for pairwise cost and $S$ for the
+sampling heuristic (not $2^J$); receptor-pool physics retains its own cap.
+
+`grouped_counting` streams input chunks and binomial output draws to a CPU
+`SymbolCounter`. It retains $U$ observed integer vectors and their frequencies,
+requiring $O(UJ)$ persistent counter storage. Chunk updates use vectorized unique-row
+sorting and merge the existing unique table; sorting/merging can itself become
+expensive as $U$ grows. Conditional entropy uses $O(b(C+J))$ memory for input
+chunk size $b$, not $O(bS)$. It neither thresholds integer counts nor packs them
+into a potentially overflowing mixed-radix integer. It is statistically approximate
+and requires output-sample convergence checks. A small repeat SEM alone does not
+exclude unseen-state bias.
+
+`cell_grouped_max_states` applies only when exact enumeration is requested.
+Selecting `grouped_kt_mi` plus `grouped_counting` removes that requirement; it does
+not remove the costs of receptor physics or the need for representative inputs.
+
 ## Grouped-cell count enumeration
 
 `entropy='grouped_mi'` enumerates $S=\prod_j(n_j+1)$ count states for $J$

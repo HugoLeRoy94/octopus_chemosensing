@@ -60,12 +60,22 @@ arrangements (polygon in 2D, tetrahedron/octahedron in 3D) for controlled experi
 
 `n_ligands` specific ligands are drawn once and stored as `ligand_latent` buffers:
 ```
-v_ℓ ~ N(v_f, family_spread)   [gaussian mode]
-v_ℓ ~ UniformNBall(v_f, family_spread)   [uniform mode]
+v_ℓ ~ N(v_f, family_spread)               [gaussian mode]
+v_ℓ ~ UniformNBall(v_f, family_spread)    [uniform mode]
+v_ℓ ~ v_f + direction * U(0, family_spread)   [shell mode]
 ```
 `UniformNBall` uses the **direction + radius trick**: sample a uniform direction on
 the sphere, then scale by `r = radius * U^(1/D)` to get uniform density in the ball
 (without the concentration-of-measure bias that plagues high-D Gaussian sampling).
+`shell` keeps the uniform direction but draws the radius uniformly in
+`[0, family_spread]`, giving equal weight to every shell radius.
+
+`LigandEnvironment.sample_near_centers(centers)` is the single definition of these
+three draws. Ligand placement calls it at construction, and
+`analysis_helper.build_latent_umap` calls it (inside `torch.random.fork_rng`, so
+the simulation RNG stream is untouched) to draw the family clouds it plots. A
+plotted cloud therefore cannot describe a different distribution from the one the
+ligands came from.
 
 ### 1.3 Learnable Unit Parameters
 
@@ -598,12 +608,60 @@ Stays within the Shannon family while tightening the bound over training. A
 Both annealed losses receive `(activity, epoch, epochs)` in `_train` and provide
 `compute_entropy(activity, entropy_type)` for measurement helpers.
 
-### 4b.1 `GroupedCellMutualInformationLoss` (`grouped_loss.py`) — exact cell MI
+### 4b.1 Shared grouping, grouped KT, and sampled counts
 
-Select `entropy='grouped_mi'`. During initialization, the runner identifies
-exactly equal rows of the cell abundance matrix and records their multiplicities
-$n_j$. It caches the $S=\prod_j(n_j+1)$ joint count states and their binomial
-multiplicities. `cell_grouped_max_states` (default 65,536) guards allocation; exceeding
+`src/response_groups.py::CellGrouping` identifies exactly equal abundance rows
+once and supplies the partition to all grouped estimators. It stores individual
+binomial supports ($C+J$ entries) but no joint states. Shared readout parameters
+and conditional response independence remain required; no approximate clustering
+is performed. Receptor-only configurations reject grouped modes.
+
+`SimulationRunner._initialize` builds this one partition eagerly, because
+`resolve_batch_sizes` needs $J$ and $S$. Every grouped estimator then reads it
+through `_cell_grouping()`, and `_build_loss` is the single constructor for the
+grouped losses, so training and measurement can never be built over two different
+partitions of the same array.
+
+`entropy='grouped_kt_mi'` selects `GroupedKTMutualInformationLoss`. It reuses the
+binary KT lower/upper kernels with multiplicities; checkpointing and optional
+compiled tiles remain available. Auto sizing uses the number of groups for KT
+cost and the count alphabet for the sampling heuristic, without allocating the
+alphabet. `train_mutual_information` logs the lower bound. Native entropy and
+existing KT metric names retain their labeled-response meaning. For this loss,
+native `full_array_entropy` and requested KT bounds use the entire evaluation
+budget, retaining group probabilities rather than all cell probabilities.
+
+`grouped_counting` is an independent, cell-only measurement usable with any
+training loss. Evaluation streams binomial draws through `GroupedResponseCounter`
+and the general `src/counting.py::SymbolCounter`, whose frequency-entropy routine
+is also used by existing binary counting. A separate output RNG avoids changing
+the environment/training stream. Conditional entropies are weighted by chunk
+sample counts; output frequencies are merged before calculating entropy. Both
+plug-in and Miller–Madow results, reconstructed labeled entropy, and observed
+unique-count fractions are reported (§09). Negative estimates are not clipped.
+
+For scalable training/evaluation, for example:
+
+```python
+entropy='grouped_kt_mi',
+measurement_fns=('grouped_counting',),
+final_measurement_fns=('grouped_counting', 'codeword_entropy'),
+```
+
+This creates no exact estimator. Explicitly requesting `grouped_information`,
+or training with `grouped_mi`, still constructs joint states and enforces
+`cell_grouped_max_states`. Counting-only evaluation performs no quadratic KT work.
+Its convergence must be tested separately from exact evaluation's input convergence.
+
+### 4b.2 `GroupedCellMutualInformationLoss` (`grouped_loss.py`) — exact cell MI
+
+Select `entropy='grouped_mi'`. The shared `CellGrouping` records the
+multiplicities $n_j$ of exactly equal rows of the cell abundance matrix. This loss
+additionally caches the $S=\prod_j(n_j+1)$ joint count states and their binomial
+multiplicities. That table is built only when exact enumeration is actually
+requested, by `SimulationRunner._grouped_estimator()`, which returns the training
+loss itself under `grouped_mi` and otherwise builds one estimator over the same
+partition. `cell_grouped_max_states` (default 65,536) guards allocation; exceeding
 it raises an error rather than silently changing estimator. Groups never come from
 approximately equal sampled activities. Shared cell readout parameters and
 conditionally independent Bernoulli outputs make this reduction exact.
@@ -755,6 +813,7 @@ Available metrics (add to `measurement_fns` in config):
 | `full_array_entropy` | `analysis_helper.full_array_entropy` | The loss's NATIVE joint-entropy estimator only (`loss_fn.compute_entropy` default: collision for a collision loss, blocked for annealed, blocked_corrected for blocked_to_corrected, kt for a kt loss). Logs a single `full_array_entropy` column. |
 | `entropy_collision` / `entropy_blocked` / `entropy_blocked_corrected` / `entropy_kt` / `entropy_kt_upper` | `analysis_helper.entropy_*` | Opt-in entropy estimators, logging `full_array_entropy_<name>`. KT lower (Bhattacharyya) and upper (KL, capped at R bits) bracket the empirical mixture entropy and use the full evaluation batch. Their separation term is capped at log₂(B); entropy also includes H_cond. Pairwise arithmetic is O(B²R), with O(BR + chunk·B + chunk²R) inference storage. Entropy and MI requests share the corresponding KT computation. |
 | `grouped_information` | `GroupedCellMutualInformationLoss` via runner streaming | Exact joint count enumeration; separate count entropies, reconstructed full response entropies, MI, and alphabet diagnostics (§09.12). Cell-only. |
+| `grouped_counting` | `GroupedResponseCounter` and `SymbolCounter` | Sample binomial group counts, merge observed frequencies on CPU, subtract analytical count noise. Separate count/labeled entropies, plug-in/MM MI and coverage diagnostics (§09.13); no joint enumeration. Cell-only. |
 | `codeword_entropy` | `analysis_helper.codeword_entropy` | Hard plug-in + Miller-Madow entropy of binary codewords |
 | `conditional_entropy_response` | `analysis_helper.conditional_entropy_response` | Analytic mean sum of binary entropies, H(Y given full sampled X) |
 | `mutual_information_kt` | `analysis_helper.mutual_information_kt` | KT lower bound on I(Y;X), directly from the separation term |

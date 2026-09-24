@@ -383,3 +383,10 @@ not an exact environmental integral. Its empirical mixture has $B$ input atoms,
 so its MI cannot exceed $\log_2 B$, even when $\log_2 S$ is larger. Population MI
 requires checking convergence with increasing independent input samples. Grouping
 reduces computational cost without removing this sampling limitation (§06).
+
+Grouped KT has the same empirical-input ceiling and the same MI bound as binary
+KT; weighting identical cells changes computational cost, not information limits.
+Sampled grouped counting adds finite-output-sample bias: its plug-in count entropy
+cannot exceed $\log_2N$ for $N$ observed count vectors. Miller–Madow correction is
+not a certified bound, and convergence of exact evaluation with input budget does
+not establish convergence of sampled counting (§04, §09.13).

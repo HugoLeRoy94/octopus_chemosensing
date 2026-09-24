@@ -90,6 +90,28 @@ to counts. `response_entropy_grouped` and
 API is redefined, and the runner rejects grouped mode for receptor-only configs.
 The same `[1e-6, 1-1e-6]` probability clamp as KT/counting is used.
 
+Grouping itself does not require enumeration. `src/response_groups.py::CellGrouping`
+provides the shared structural partition and group probabilities for exact, KT,
+and sampled-count estimators. The mixture is over inputs:
+$P(K)=\mathbb E_X\prod_j\mathrm{Binomial}(K_j;n_j,p_j(X))$; groups are
+independent conditional on the full input, not generally marginally independent.
+
+For two input-conditioned binomials with the same multiplicity $n$, the binomial
+theorem gives their Bhattacharyya coefficient as
+$[\sqrt{pq}+\sqrt{(1-p)(1-q)}]^n$. Their KL divergence is also $n$ times the
+Bernoulli KL. Thus weighted group columns give exactly the same KT MI bounds as
+the full binary array. `entropy='grouped_kt_mi'` uses this identity; its native
+entropy remains the KT lower bound on **labeled** $H(Y)$.
+
+`grouped_counting` instead draws $K_j\sim\mathrm{Binomial}(n_j,p_j(x))$ and
+counts observed integer vectors. It estimates $H(K)$ by plug-in and Miller–Madow
+frequencies and subtracts analytical $\mathbb E_X\sum_j H(K_j\mid X)$.
+Individual binomial supports have $\sum_j(n_j+1)=C+J$ entries; the joint alphabet
+is never allocated. Reconstruction adds
+$D=H(Y\mid X)-H(K\mid X)$ to count entropy. Count and labeled estimates have
+distinct metric names (§09). Negative MI estimates are retained; Miller–Madow
+is a bias correction, not a guarantee when many outcomes remain unseen.
+
 For two identical cells and equally likely stimuli giving $p=0$ and $p=1/2$,
 the unclamped labeled probabilities are $(5/8,1/8,1/8,1/8)$ and count probabilities
 are $(5/8,1/4,1/8)$. Thus $H(Y)=1.548795$, $H(\mathbf K)=1.298795$,

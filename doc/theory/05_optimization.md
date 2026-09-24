@@ -116,6 +116,23 @@ With no repeated cells, $S=2^C$ and there is no enumeration saving. Batch size
 still limits empirical-input MI to $\log_2 B$, and population estimates require
 sample-budget convergence checks even though output enumeration is exact.
 
+## 5.3d Grouped KT MI (`grouped_kt_mi`)
+
+`GroupedKTMutualInformationLoss` reuses `compute_kt_entropy` and its existing
+tiling, optional compilation, and checkpointed backward. `CellGrouping` reduces
+identical columns by averaging, preserving partial gradients for duplicate cells.
+The shared KT kernel accepts multiplicities and uses
+$\log\mathrm{BC}(x,x')=\sum_j n_j\log[\sqrt{p_j(x)p_j(x')}+
+\sqrt{(1-p_j(x))(1-p_j(x'))}]$. The loss and gradients match ungrouped KT;
+it remains a lower bound, not exact empirical MI. The shared upper-bound kernel
+likewise weights KL and retains the labeled-entropy cap $\sum_jn_j=C$.
+
+Work is $O(BC+B^2J)$ rather than $O(B^2C)$. No joint count states are built.
+`compute_entropy` still returns a labeled-response entropy bound. Sampled grouped
+counting is an evaluation metric, not a differentiable replacement for this loss.
+Request `grouped_counting` for scalable final evaluation; requesting
+`grouped_information` still opts into exact enumeration and its allocation guard.
+
 ## 5.4 Correlation-Aware Blocked Entropy
 
 The blocked Shannon estimator partitions the $R$ receptors into blocks of at most `block_size` receptors, computes exact Shannon entropy within each block, and sums under a between-block independence assumption:
@@ -175,6 +192,7 @@ This avoids the collision estimator entirely while still tightening the bound ov
 | `kt` | KT Bhattacharyya lower bound on Shannon $H$ | $-H_{\text{KT}}$ |
 | `kt_mi` | KT lower bound on full-input $I(Y;X)$ | $-I_{\text{KT,lower}}$ |
 | `grouped_mi` | Exact empirical-input cell MI through joint binomial counts | $-[H(\mathbf K)-H(\mathbf K\mid X)]$ |
+| `grouped_kt_mi` | Same KT MI lower bound using cell-group multiplicities | $-I_{\rm KT,lower}$ |
 | `blocked` | Blocked Shannon (upper bound) | $-H_{\text{blocked}}$ |
 | `blocked_corrected` | Blocked - cross-block MI (point estimate) | $-H_{\text{blocked\_corrected}}$ |
 | `annealed` | Blocked (measurement) | $-[(1-\lambda) H_{\text{blocked}} + \lambda H_{\text{collision}}]$ |

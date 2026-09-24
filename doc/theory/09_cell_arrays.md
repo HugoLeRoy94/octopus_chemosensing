@@ -558,7 +558,11 @@ mode (`cell_receptors` wins over `cell_gene_sets` if both are given);
 
 ## 9.12 Exact information by grouping identical cells
 
-Enable with `entropy="grouped_mi"`. The runner builds
+All three estimators share `src/response_groups.py::CellGrouping`, built from
+exactly equal `W` rows. It supplies multiplicities, reduced probabilities, binomial
+draws and conditional count entropies, without enumerating joint states.
+
+Enable exact enumeration with `entropy="grouped_mi"`. The runner builds
 `src/grouped_loss.py::GroupedCellMutualInformationLoss` from the resolved `W`.
 Exact row equality determines groups; same genes with different abundances or
 explicit repertoires are not automatically equivalent. Shared readout parameters
@@ -594,7 +598,8 @@ measurement_fns=("grouped_information", "full_array_entropy",
 `full_array_entropy` still reports $H(Y)$, never count entropy. The existing
 `conditional_entropy_response` remains the sum of individual binary entropies and
 agrees with its reconstructed grouped counterpart. A receptor-only config rejects
-`grouped_mi` and `grouped_information`; old losses and defaults are unchanged.
+`grouped_mi`, `grouped_kt_mi`, `grouped_information`, and `grouped_counting`;
+old losses and defaults are unchanged.
 
 The measurement can also be requested while training cells with `kt_mi` or another
 loss: the runner creates a separate W-based grouped evaluator. In either case it
@@ -607,3 +612,37 @@ Those conditional helpers still operate on the first evaluation chunk.
 be increased explicitly, but memory also depends on the input batch. If many cells
 have unique repertoires, grouping provides little or no saving; use KT or counting
 when exact count enumeration is too large. See §06 for costs and batching.
+
+### 09.13 Grouped KT and sampled-count evaluation
+
+`entropy="grouped_kt_mi"` selects the same KT MI lower bound as `kt_mi`, with
+one probability column per group and multiplicity-weighted overlap/KL kernels.
+There is no count-state allocation. Both KT bounds and native `full_array_entropy`
+retain the labeled-response meaning; they use the full evaluation budget.
+
+`measurement_fns=("grouped_counting",)` selects sampled binomial-count evaluation,
+independently of the training objective. It uses a CPU frequency table of observed
+integer vectors and analytical per-group conditional entropies. With suffix
+`e` equal to `plugin` or `mm` (Miller–Madow), the reported metrics are:
+
+| Metric | Meaning |
+|---|---|
+| `grouped_count_entropy_counting_e` | Frequency estimate of $H(K)$ |
+| `grouped_count_conditional_entropy_counting` | Input average of analytical $H(K\mid X)$ |
+| `grouped_label_entropy_counting` | $D=H(Y\mid X)-H(K\mid X)$ |
+| `response_entropy_grouped_counting_e` | Estimated $H(K)+D$, full labeled response entropy |
+| `conditional_entropy_response_grouped_counting` | Analytical full $H(Y\mid X)$ averaged over inputs |
+| `mutual_information_grouped_counting_e` | Estimated $H(K)-H(K\mid X)$ |
+| `grouped_counting_K_hat`, `grouped_counting_unique_fraction` | Observed unique count vectors $U$ and $U/N$ |
+| `grouped_counting_samples`, `grouped_counting_log2B` | Output sample count $N$ and $\log_2N$ |
+
+The shared `grouped_n_groups`, `grouped_n_states`, and
+`grouped_count_entropy_upper` describe the model, not sample coverage. Grouped
+counting does not populate the exact estimator's keys. Negative estimates are
+retained and corrections are not clipped to physical bounds. Compare against
+exact enumeration on small arrays and increase counting samples to check bias.
+
+Only exact enumeration enforces `cell_grouped_max_states`. To avoid enumeration
+entirely, select grouped KT training and grouped counting measurement, omitting
+`grouped_information`. The gene-expression sweep scripts expose this as
+`--entropy grouped_kt_mi --evaluation counting`.
