@@ -68,8 +68,8 @@ as a sweep axis, so a list here would be silently mistaken for one.
 | `cell_gene_sets` | `None` | exact gene set per cell | 9.4 |
 | `cell_receptors` | `None` | exact repertoire per cell, bypassing gene expansion | 9.4 |
 | `cell_sampling_strategy` | `"bernoulli"` | `"bernoulli"` (per-gene probability) or `"size_pmf"` (per-cell gene count) | 9.4 |
-| `cell_gene_probs` | `None` | bernoulli: $P(\text{gene } u \text{ expressed})$; defaults to $2/n_\text{genes}$ | 9.4 |
-| `cell_size_pmf` | `None` | size_pmf: entry $i$ = $P(i{+}1$ genes$)$ | 9.4 |
+| `cell_gene_probs` | `None` | bernoulli: $P(\text{gene } u \text{ expressed})$, default $2/n_\text{genes}$. size_pmf: weights for WHICH genes are drawn | 9.4 |
+| `cell_size_pmf` | `None` | size_pmf: entry $i$ = $P(i{+}1$ genes$)$; build it with `size_pmf_for_mean` | 9.4 |
 | `cell_max_genes` | `None` | bernoulli: reject cells above this — the main lever on $R_\text{pool}$ | 9.4 |
 | `cell_sampling_seed` | `None` | reproducible gene sets | 9.4 |
 | `cell_stoichiometry` | `"multinomial"` | receptor abundance within a cell: random assembly, or `"uniform"` | 9.5 |
@@ -160,8 +160,12 @@ per cell is then Poisson-binomial, not something you control directly.
 ### `size_pmf` — `sample_gene_sets_by_size`
 
 Two stages: draw the **number** of expressed genes from `cell_size_pmf` (entry $i$ is the
-unnormalised probability of $i+1$ genes), then draw that many genes uniformly without
-replacement.
+unnormalised probability of $i+1$ genes), then draw that many genes without replacement,
+weighted by `cell_gene_probs` (uniform when it is `None`).
+
+The two laws are independent: `cell_size_pmf` says how promiscuous a cell is,
+`cell_gene_probs` says which subunits it reaches for. Either can be varied with the
+other held fixed.
 
 Use it when you want to control the promiscuity distribution directly — which is the
 usual experimental question ("what happens as cells express more genes?"). Setting
@@ -172,6 +176,38 @@ usual experimental question ("what happens as cells express more genes?"). Setti
 choice of `cell_size_pmf`. It was designed this way so the sampler never has to be
 rewritten to ask a new question — including the conditional-on-already-expressed models
 that motivated the cell picture in the first place.
+
+### Building the two laws from a target mean
+
+Writing a pmf by hand does not let you move an experiment smoothly along the axis that
+matters, which is the **mean number of genes per cell**. Two helpers construct the laws
+from that target:
+
+| helper | gives | families |
+|---|---|---|
+| `size_pmf_for_mean(n_genes, mean, family)` | `cell_size_pmf` with the requested mean | `uniform`: flat over $\{1..M\}$, so only means $(M{+}1)/2$ are reachable. `exponential`: $p_i \propto e^{\lambda i}$ with $\lambda$ solved by bisection, so any mean in $(1, G)$ is reachable. |
+| `gene_expression_probs(n_genes, family, ratio)` | `cell_gene_probs` | `uniform`: every gene equally likely. `exponential`: geometric decay with `ratio` $= P(\text{first})/P(\text{last})$. |
+
+At mean $=(G{+}1)/2$ the exponential size law has $\lambda = 0$ and **is** the uniform
+law, so curves from the two families must meet there. That is a free consistency check
+on the sampler, and `unit_test/test_expression_law.py` asserts it.
+
+### Independence between cells, and what it costs
+
+Neither sampler lets a cell see what any other cell expressed, so **a gene can end up
+expressed nowhere in the array**. Designs that force every gene to appear at least once
+(the `coverage="complete"` option in `tasks/cells/gene_expression`) are convenient but
+require coordination a developing tissue has no mechanism for. Report
+`genes_represented` rather than assuming full coverage.
+
+The cost is that independent draws leave few identical cells. The grouped estimators of
+§04 and §05 get their speed from exactly equal abundance rows, and the exact one
+enumerates $S=\prod_j (n_j+1)$ joint count states. With $G=5$, $C=30$ and mean 2.5,
+independent sampling produces about 18 distinct gene sets out of 30 cells and
+$S \approx 10^7$, far beyond `cell_grouped_max_states`. **Exact enumeration is therefore
+unavailable under an independent law**: use `entropy='grouped_kt_mi'` with the
+`grouped_counting` measurement, and read `grouped_counting_missing_mass` beside any MI
+before trusting small differences. `tasks/cells/expression_law` is built on this basis.
 
 ### Why a size cap matters
 
@@ -634,6 +670,7 @@ integer vectors and analytical per-group conditional entropies. With suffix
 | `conditional_entropy_response_grouped_counting` | Analytical full $H(Y\mid X)$ averaged over inputs |
 | `mutual_information_grouped_counting_e` | Estimated $H(K)-H(K\mid X)$ |
 | `grouped_counting_K_hat`, `grouped_counting_unique_fraction` | Observed unique count vectors $U$ and $U/N$ |
+| `grouped_counting_missing_mass` | Good-Turing $f_1/N$: probability mass never sampled. The coverage diagnostic to trust; read it beside the MI |
 | `grouped_counting_samples`, `grouped_counting_log2B` | Output sample count $N$ and $\log_2N$ |
 
 The shared `grouped_n_groups`, `grouped_n_states`, and

@@ -485,10 +485,19 @@ on the C cells, while only the physics cap sees $R_{pool}$.
 - `'bernoulli'` — gene $u$ expressed independently with probability `cell_gene_probs[u]`;
   empty cells rejected, `cell_max_genes` caps the repertoire size.
 - `'size_pmf'` — two stage: draw the *number* of expressed genes from `cell_size_pmf`
-  (entry $i$ = probability of $i+1$ genes), then draw that many genes uniformly without
-  replacement. This is the hook for an arbitrarily complex expression model — a
-  distribution conditioned on how many genes are already expressed is exactly a choice
-  of `cell_size_pmf`.
+  (entry $i$ = probability of $i+1$ genes), then draw that many genes without
+  replacement, weighted by `cell_gene_probs` (uniform if `None`). The two laws are
+  independent, so promiscuity and subunit preference vary separately. This is the hook
+  for an arbitrarily complex expression model — a distribution conditioned on how many
+  genes are already expressed is exactly a choice of `cell_size_pmf`.
+  Build both laws from a target mean genes per cell with
+  `src.cells.size_pmf_for_mean` and `src.cells.gene_expression_probs` (§09.4).
+
+Both samplers draw cells **independently**, so a gene can be expressed nowhere. That
+also means few cells are exactly alike, which removes the grouping the exact estimator
+of §4b.2 depends on: under an independent law the joint count alphabet reaches $10^7$
+and `entropy='grouped_kt_mi'` with the `grouped_counting` measurement is the only
+workable path (§09.4, `tasks/cells/expression_law`).
 
 Sampling happens **once**, in `SingleRunConfig.__post_init__`, which writes the
 resolved gene sets back into `cell_gene_sets` and the derived pool into
@@ -921,7 +930,32 @@ to 0 and I(A;M) → H(A) spuriously.
 
 **Miller-Madow correction:** the plug-in entropy estimator is biased downward for finite
 batch sizes. The Miller-Madow correction adds `(K_hat − 1) / (2·B·ln2)` where K_hat is
-the number of distinct observed codewords, partially correcting this bias.
+the number of distinct observed codewords, partially correcting this bias. It corrects by
+the symbols SEEN, so it under-corrects exactly when the alphabet is mostly unobserved.
+
+**The final measurement is taken ONCE.** `_test` runs a single pass over
+`final_test_batch_size` inputs and stores each metric as a one-element list. It used to
+repeat ten times. Repeats show evaluation NOISE, but a frequency-based entropy estimate
+is biased downward by an amount fixed by the batch size, so ten repeats of a small batch
+carry exactly the bias of one. Measured on the G=5, C=30 arrays at 3 genes per cell,
+163,840 inputs spent as 10x16,384 give 1.82 bits of bias and as 1x163,840 give 0.51.
+Re-measure a saved checkpoint with `evaluation_budget.py` when repeat scatter is wanted.
+
+**Sizing the evaluation budget.** `estimator_crosscheck.py` measured the counting bias
+against exact enumeration over 5 expression levels and 3 budgets. The fit over those 12
+points is `bias ≈ 3.34·(B / 2^H(K))^-0.92`: it is the ratio of budget to effective
+alphabet that matters. Bias falls under 0.1 bits at a ratio near 46. Since
+`H(K) = I + H(K|X)` and `H(K|X)` grows with the number of cells, `2^H(K)` grows
+exponentially in C while an affordable budget grows linearly — the cell count is a
+stronger lever on measurability than the budget.
+
+**Good-Turing missing mass:** every counting path also reports `..._missing_mass`,
+$f_1/B$, where $f_1$ counts symbols observed exactly once. This is the standard estimate
+of the probability mass never sampled, and it is the quantity to read next to any
+counting entropy. It is reported, never thresholded: it is continuous, and the honest
+presentation is to plot it beside the MI it qualifies. Measured on the G=5, C=30 cell
+arrays, the counting bias grows steeply with it, reaching about 1.8 bits where more than
+half of the observations were singletons.
 
 **Post-hoc measurement (outside the pipeline):** `analysis_helper` exposes reusable
 primitives for re-measuring a **reloaded** checkpoint (via `plotlib.load_model`) without

@@ -45,8 +45,14 @@ the conditional term; near hard endpoints this represents a tiny numerical noise
 
 Counting estimates are not certified bounds or confidence intervals. They can
 be negative after subtraction because of finite-sample bias; values are retained
-without clipping. The observed distinct-code fraction and sample count are saved
-to help assess coverage. Miller–Madow cannot repair a mostly unseen output alphabet.
+without clipping. The **Good-Turing missing mass** $f_1/N$, the fraction of
+observations that are the only sighting of their symbol, is saved as the coverage
+diagnostic: it estimates the probability mass never sampled, so it states directly
+whether $N$ was large enough for the frequencies to mean anything. The distinct-code
+fraction $U/N$ is also saved, but counts every distinct symbol rather than the
+once-only ones, so it overstates coverage loss and has no corresponding theory.
+Miller–Madow cannot repair a mostly unseen output alphabet: it corrects by the
+symbols SEEN, which is itself an underestimate when most of the alphabet is missing.
 Increase the evaluation budget and check stability, especially when response
 noise spreads mass over many codes. KT bounds apply to the empirical input
 mixture, not automatically to the population channel.

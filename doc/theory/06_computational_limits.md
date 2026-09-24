@@ -255,3 +255,24 @@ Given the parameters: $B = 2^{20}$, $L = 100$, $U = 26$, $R = 20$, $D = 20$, $K 
 | Activation grad (backward) | $\sim 2\times$ forward | $\sim 25$ GB | autograd retains for backward |
 
 Total *peak* forward-only memory: roughly $10.9 + 10.9 + 8.4 \approx 30$ GB.  Add the autograd graph (which keeps activations for backward) raising to $\sim 60$–$80$ GB.
+
+
+## Sampled counting at scale
+
+`src/counting.py::SymbolCounter` packs each response row into ONE int64 when the
+per-column radices are given and their product stays under $2^{62}$, which is the case
+for grouped cell counts (radices $n_j+1$). Keys accumulate raw and are reduced once, so
+the cost is a single $O(B\log B)$ sort and 8 bytes per observation.
+
+Without packing it keeps a $(U, J)$ row table and re-reduces it on every chunk, which
+re-sorts the whole accumulated table each time and is therefore **quadratic** in the
+number of observations. Measured at $J=20$: 0.76 s at $B=131{,}072$, 7.6 s at 524,288,
+99 s at 2,097,152. Packed, the same points take 0.04 s, 0.16 s and 0.61 s, and
+$B=8{,}388{,}608$ takes 2.3 s. Counting is not a limit on evaluation budget; the
+physics forward pass, linear in $R_\text{pool}$, is.
+
+The alphabet that has to be sampled is $2^{H(K)}$ with $H(K)=I+H(K\mid X)$, and
+$H(K\mid X)$ is a sum of binomial entropies over the groups. It therefore grows close to
+linearly in the cell count until cells start duplicating, which needs $C$ well above
+$2^G-1$. Grouping blunts the growth only in that late regime, so the cell count is a
+stronger lever on measurability than the budget.
