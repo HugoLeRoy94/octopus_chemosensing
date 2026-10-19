@@ -966,14 +966,50 @@ entropy and MI, both plug-in and Miller–Madow). `eval_batch_cap(free_bytes)` a
 to KT's `(tile, B)` working buffer. `src.testscaling` orchestrates on top of these (walk
 sweeps → pick runs → choose sizes → write CSV): `measurement='kt'` writes
 `<sweep>/test_scaling.csv`, while `measurement='counting'` writes the deliberately separate
-`<sweep>/test_counting.csv`. The latter keeps only sampled CPU response codes plus a running
-conditional-entropy sum, so it can exceed the KT cap but still needs O(BR) CPU counting
-memory. `tasks/receptors/fig1/scripts/test_final.py` defaults to this counting path; its CSV
-contains `response_entropy_{plugin,mm}` and
+`<sweep>/test_counting.csv`. The counting path keeps no code matrix: each draw is packed
+into ⌈R/62⌉ int64 keys on the GPU and merged into a CPU `SymbolCounter` table, so its CPU
+cost is 8–16 bytes per sniff plus the table of distinct codes (§06), and the budget is set
+by the forward pass and by the log2(n) ceiling on a measurable entropy, not by the KT
+memory cap. `tasks/receptors/fig1/scripts/test_final.py` defaults to this counting path;
+its CSV contains `response_entropy_{plugin,mm}` and
 `mutual_information_counting_{plugin,mm}`, along with H(Y|X) and coverage diagnostics.
 The per-task `tasks/*/scripts/test_scaling.py` wrappers use the KT default. Size strategy:
-`--test_sizes` (absolute), `--mult` (per-run multiples of the train batch B, e.g.
-`1 2 4 8 16`), or an auto ×4 ladder — to check an estimator's sample-size stability.
+`--test_sizes` (absolute), `--largest` (one size = f×B), `--mult` (per-run multiples of the
+train batch B, e.g. `1 2 4 8 16`), or an auto ×4 ladder — to check an estimator's
+sample-size stability. `--fwd_chunk` bounds the forward sub-batch and `--seed` makes the
+measurement reproducible (inputs on the global RNG, Bernoulli responses on a separate
+generator).
+
+**The counting ladder is nested and adaptive.** Its batches are ×4 checkpoints of ONE
+growing stream starting at `--start_samples`, so the batch of 4n reuses the n sniffs below
+it and a whole ladder costs its largest batch. No fixed budget is right for every
+condition, because counting needs about 46·2^H(Y) sniffs for an H(Y) = I + H(Y|X) that is
+what we are measuring: on fig1 ng10, R=10 converges by 16k sniffs (it cannot exceed R
+bits) while R=50 was still gaining 1 bit per ×4 at 2^26 with a missing mass of 0.45. So
+`testscaling.convergence_stop` ends a run's growth when the missing mass falls under
+`--missing_target`, or a ×4 bigger batch buys under 0.02 bit, or the next batch's table is
+projected past `--max_memory_gb` from the observed growth of K_hat (§06: 100 bytes per
+distinct code, 140 above R=62). Every batch is written, so the convergence trail is
+automatic and the value to plot is the largest `test_size` per run, read beside its
+`response_counting_missing_mass`. Each batch also records `seconds`, `seconds_total`,
+`peak_ram_gb` and `fwd_chunk`, and the CSV is flushed after EVERY run, because one batch
+is hours of GPU and a later OOM must not discard the runs that already finished. The
+forward chunk is capped at 4× the train batch, which was itself auto-sized to fit with
+gradients: a fixed `--fwd_chunk` does not survive growing R, since the (B, L, R·k_sub)
+energy tensor does not (65536 fits at R=40 and is an 80 GB OOM at R=50). An
+`OutOfMemoryError` inside a batch halves the chunk and retries, which is exact because
+nothing has been counted yet.
+
+**Does counting resolve H(Y)?** `tasks/receptors/fig1/analysis/counting_resolvability.py`
+answers that per condition: memory over time from the monitor trace, wall time per batch,
+peak memory against distinct codes, and H against 1/B with a power-law fit to 1/B = 0.
+Measured on the ng10 ladders (October 2026), that extrapolation does NOT work. Fitting
+H(n) = H∞ − a·n^−b and adding batches makes H∞ fall monotonically without settling: at
+R=30, whose ladder reached a missing mass of 0.018 at 4.3e9 sniffs and is therefore
+essentially measured at 22.52 bits, the fit gave 25.09 on 4 batches, 23.70 on 6 and 23.09
+on 9, still 0.4 bit high while quoting an error of 0.11. R=40 and R=50 drift the same way
+from above. Quote the measured value with its missing mass as a lower bound; do not quote
+the fit.
 
 ---
 

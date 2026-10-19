@@ -1,5 +1,42 @@
 # Octopus Chemosensing Project - AI Assistant Rules
 
+## Git: NEVER commit unless explicitly told to
+
+Do NOT run `git commit`, `git push`, or any history-rewriting git command unless
+the user asks for it **in that message**. A previous "commit this" covers that one
+batch only and expires immediately; it is never standing permission.
+
+Finish the work, run the tests, report what changed, and leave it as unstaged
+changes in the working tree. Offering to commit is fine. Acting on the offer
+before being told is not.
+
+## Figures: NEVER save to disk unless explicitly told to
+
+Do NOT call `plt.savefig` / `fig.savefig`, and do not write image files, unless the
+user asks for it **in that message**. Build the figure and show it. If a script
+needs a save path at all, put it behind a flag that defaults to off.
+
+The user decides what lands in the repo. Writing files they did not ask for
+clutters the tree and forces them to clean up after you.
+
+## Environments: NEVER fix the environment to make a comparison clean
+
+Do NOT propose, and do not implement, matching or sharing the environment seed
+across conditions, replicates, or sweeps. Not to make a comparison "paired", not
+to isolate one variable, not as a control.
+
+The scientific claim is about a **category** of environments, not about any one
+of them. A result that holds only on a shared ligand world is a property of that
+world, not of the array, and is worthless. Results must be statistically reliable
+across the category and independent of its details.
+
+When two conditions disagree and a fixed environment would "explain" it, the
+correct response is **more replicates across more environments**, and a
+comparison of distributions rather than of two numbers. Report the spread across
+independent optimizations, never the spread across test repeats of one model.
+
+This is permanent. Do not raise it again.
+
 ## Project Overview
 This project simulates the chemo-sensory receptor array of octopuses. We optimize the mutual information between an array of combinatorial ion channels (hetero-pentamers) and a high-dimensional chemical latent space representing ligand families.
 

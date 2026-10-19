@@ -389,3 +389,4 @@ plt.tight_layout()
 plt.show()
 # %%
 [[s,c] for s, c in zip(unique_suckers, sucker_counts)]
+# %%

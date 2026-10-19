@@ -16,10 +16,10 @@ tiles as in ordinary KT. Auto sizing uses $J$ for pairwise cost and $S$ for the
 sampling heuristic (not $2^J$); receptor-pool physics retains its own cap.
 
 `grouped_counting` streams input chunks and binomial output draws to a CPU
-`SymbolCounter`. It retains $U$ observed integer vectors and their frequencies,
-requiring $O(UJ)$ persistent counter storage. Chunk updates use vectorized unique-row
-sorting and merge the existing unique table; sorting/merging can itself become
-expensive as $U$ grows. Conditional entropy uses $O(b(C+J))$ memory for input
+`SymbolCounter`. It retains $U$ observed symbols and their frequencies, requiring
+$O(UW)$ persistent counter storage for $W$ packed words ($W=1$ for the usual grouped
+radices). Chunk updates are buffered and merged into the unique table by a
+lexicographic sort; merging can still become expensive as $U$ grows. Conditional entropy uses $O(b(C+J))$ memory for input
 chunk size $b$, not $O(bS)$. It neither thresholds integer counts nor packs them
 into a potentially overflowing mixed-radix integer. It is statistically approximate
 and requires output-sample convergence checks. A small repeat SEM alone does not
@@ -259,17 +259,28 @@ Total *peak* forward-only memory: roughly $10.9 + 10.9 + 8.4 \approx 30$ GB.  Ad
 
 ## Sampled counting at scale
 
-`src/counting.py::SymbolCounter` packs each response row into ONE int64 when the
-per-column radices are given and their product stays under $2^{62}$, which is the case
-for grouped cell counts (radices $n_j+1$). Keys accumulate raw and are reduced once, so
-the cost is a single $O(B\log B)$ sort and 8 bytes per observation.
+`src/counting.py::SymbolCounter` packs each row into $W=\lceil$ columns per int64
+$\rceil$ keys when the per-column radices are given: ONE key while their product stays
+under $2^{62}$ (grouped cell counts with radices $n_j+1$; binary responses up to
+$R=62$), two for a 75-receptor binary response. Packing runs on the symbols' own
+device, so only $8W$ bytes per observation cross to CPU whatever $J$ is. Without
+radices the raw $(U,J)$ rows are kept — give radices whenever the alphabet is bounded.
 
-Without packing it keeps a $(U, J)$ row table and re-reduces it on every chunk, which
-re-sorts the whole accumulated table each time and is therefore **quadratic** in the
-number of observations. Measured at $J=20$: 0.76 s at $B=131{,}072$, 7.6 s at 524,288,
-99 s at 2,097,152. Packed, the same points take 0.04 s, 0.16 s and 0.61 s, and
-$B=8{,}388{,}608$ takes 2.3 s. Counting is not a limit on evaluation budget; the
-physics forward pass, linear in $R_\text{pool}$, is.
+Rows are buffered and reduced only when the buffer exceeds both $2^{23}$ rows and the
+current unique table, so the table is re-sorted a logarithmic number of times instead
+of once per chunk: $O(B\log B)$ total, not the **quadratic** cost of re-reducing every
+chunk. Measured at $J=20$ with the old per-chunk reduction: 0.76 s at $B=131{,}072$,
+7.6 s at 524,288, 99 s at 2,097,152; packed and buffered, 0.04 s, 0.16 s and 0.61 s.
+
+The reduction is a lexicographic sort (stable argsort per word, least significant
+first) with segment-summed weights, not `torch.unique(dim=0)`: `unique` on a 2-D table
+costs ~350 bytes per row, which is 20 GB at $6.7\times10^7$ two-word responses, against
+~40 bytes per row for the sort. Worst case (every response distinct), $B=2^{26}$ at
+$R=75$ measured 51 s and 9.3 GB of CPU memory. Peak memory follows the number of
+DISTINCT codes $U$, not $B$: measured at $U=3.36\times10^7$, 95 bytes per distinct code
+for one packed word and 130 for two, which is what `testscaling.convergence_stop`
+projects the next rung against. Counting is not a limit on evaluation
+budget; the physics forward pass, linear in $R_\text{pool}$, is.
 
 The alphabet that has to be sampled is $2^{H(K)}$ with $H(K)=I+H(K\mid X)$, and
 $H(K\mid X)$ is a sum of binomial entropies over the groups. It therefore grows close to

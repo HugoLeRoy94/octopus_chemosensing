@@ -1,0 +1,1502 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue]{hyperref}
+
+\newtheorem{lemma}{Lemma}
+\newtheorem{remark}{Remark}
+\newtheorem{sanity}{Consistency check}
+\newtheorem{warning}{Validity warning}
+
+\newcommand{\RR}{\mathbb{R}}
+\newcommand{\EE}{\mathbb{E}}
+\newcommand{\PP}{\mathbb{P}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\Cov}{\mathrm{Cov}}
+\newcommand{\sd}{\mathrm{sd}}
+\newcommand{\Phibar}{\overline{\Phi}}
+\newcommand{\htwo}{h_2}
+\newcommand{\ksub}{k_{\mathrm{sub}}}
+\newcommand{\Ebase}{E_{\mathrm{base}}}
+\newcommand{\Emax}{E_{\mathrm{max}}}
+\newcommand{\uhat}{\hat{u}}
+
+\title{Mutual information of a homomer receptor array \\ in a single-family chemical environment}
+\author{Analytical baseline for the octopus chemosensation project}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+We compute, in closed form up to one-dimensional quadratures, the mutual information
+(MI) between the binary activity pattern of an array of $R$ freely placed receptors
+(homomers) and the chemical stimulus, for a single Gaussian family of ligands in a
+$D$-dimensional chemical latent space, one ligand per sniff, and a shared lognormal
+concentration. The derivation uses the \emph{gaussian affinity kernel} of the simulator
+throughout, and introduces the quadratic kernel only as an explicitly flagged limit. The
+answer is governed by a single dimensionless number $\nu$, the ratio of the common-mode
+threshold fluctuation to the private per-receptor signal. The array delivers its ideal
+$R$ bits when $\nu \ll 1$, degrades as $R/\nu$ when $\nu \gtrsim 1$, and collapses to
+$O(\log R)$ bits when $\nu \gtrsim R/\log R$. Because the per-unit baseline energy
+$\Ebase$ and selectivity ceiling $\Emax$ are both learnable, $\nu$ is not an environment
+parameter but an outcome the optimizer partly controls, and the saturation of the
+gaussian kernel is what stops it from being driven to zero. Heteromers are deferred
+entirely to Appendix~\ref{app:hetero}.
+\end{abstract}
+
+\section{Overview: approach, key steps, and logic}
+\label{sec:overview}
+
+\paragraph{The problem this solves.}
+In the numerical work so far, the environment was tuned so that a homomer array reaches
+its intrinsic architectural optimum, $R$ bits for $R$ binary receptors. That was the
+right choice for isolating architecture from geometry, but it has a cost: once the
+homomer arm is pinned at the ceiling, every parameter sweep is flat and there is nothing
+to compare against. To study the concentration channel with a single ligand per sniff we
+need to leave the ceiling in a controlled way, and that requires a theory predicting what
+a homomer array actually delivers in a given environment, not an upper bound on what it
+could deliver. This document is that theory.
+
+\paragraph{The approach in one paragraph.}
+The calculation rests on one structural observation. A receptor fires when the
+log-concentration exceeds its half-activation energy, and with the gaussian kernel that
+condition rearranges exactly into \emph{the match between ligand and receptor exceeds a
+demand level set by the concentration}. The match is $\exp(-d^2/\lambda^2)$ with $d$ the
+latent distance, so taking a logarithm turns the comparison into an inequality on $d^2$,
+and expanding the square splits the ligand dependence into two pieces of completely
+different character: a term $\|l\|^2$ that is \emph{the same for every receptor}, and a
+term $u_r\cdot l$ that is \emph{linear in the ligand coordinate and specific to each
+receptor}. The concentration joins the first group, because one ligand at one
+concentration presents the same concentration to every receptor. The whole array is
+therefore driven by a single scalar common mode plus $R$ Gaussian projections, and
+projections of an isotropic Gaussian onto orthogonal directions are independent, so the
+array reduces to \emph{$R$ independent Gaussian variables cut by one common random
+threshold}. Conditionally on that threshold the receptors are independent and
+identically distributed Bernoulli variables, the joint response is exchangeable, and its
+entropy follows from a two-line identity. Everything then depends on the environment
+through a single ratio.
+
+\paragraph{The logic, step by step.}
+\begin{enumerate}
+  \item \textbf{Match versus demand.} Rewrite the activation condition exactly, with the
+        gaussian kernel, as a comparison between a geometric match and a concentration
+        demand. Show the firing set is exactly a ball whose radius is set by the
+        concentration (Section~\ref{sec:step1}).
+  \item \textbf{Separation.} Expand the square and split the condition into a shared
+        scalar and a private linear projection (Section~\ref{sec:step2}).
+  \item \textbf{Symmetry.} Isotropy forces equal receptor norms at a balanced optimum,
+        and orthogonal directions make the projections independent
+        (Section~\ref{sec:step3}).
+  \item \textbf{Conditional independence.} Condition on the shared threshold. The
+        receptors become independent coins with a common bias $q$
+        (Section~\ref{sec:step4}).
+  \item \textbf{Statistics of the common mode, kernel-free.} Mean, variance, balance
+        condition, and the definition of the control parameter $\nu$, all written for an
+        arbitrary kernel (Section~\ref{sec:step5}).
+  \item \textbf{Specialisation to the gaussian kernel.} Evaluate the common mode
+        explicitly, identify the three learnable knobs and what each controls, and
+        recover the quadratic kernel as the small-field limit
+        (Section~\ref{sec:gaussian}).
+  \item \textbf{The optimal lever arm.} The genuinely new content that the gaussian
+        kernel brings: moving receptors outward suppresses the common mode linearly but
+        amplifies concentration noise exponentially, so there is a finite optimum
+        (Section~\ref{sec:lever}).
+  \item \textbf{Entropy.} Convert conditional independence into an exact MI expression,
+        by two routes that must agree (Section~\ref{sec:step6}).
+  \item \textbf{Limits.} The three regimes, with explicit constants and a worked example
+        (Section~\ref{sec:limits}).
+  \item \textbf{Error control.} Quantify the one approximation made, and give the exact
+        reduction that avoids it (Section~\ref{sec:exact}).
+  \item \textbf{Decomposition.} Split the MI into identity and concentration parts
+        analytically (Section~\ref{sec:split}).
+  \item \textbf{Symmetry breaking.} Release the equal-norm assumption and show a
+        staggered array beats a balanced one precisely when $\nu > 1$
+        (Section~\ref{sec:stagger}).
+  \item \textbf{The other corner.} What changes when $R > D$
+        (Section~\ref{sec:corner}).
+\end{enumerate}
+
+\paragraph{What the reader should take away before any algebra.}
+Four statements carry the document. First, a shared log-concentration fluctuation and a
+radial breathing of the ligand cloud enter at exactly the same place and are
+information-theoretically the same object. Second, for an array of balanced receptors
+that common mode is pure nuisance, so concentration spread \emph{reduces} the total MI
+even though it increases input entropy. Third, because the baseline energy $\Ebase$ is
+learnable, the array has a free parameter whose only function is to defeat the common
+mode, and the saturation of the gaussian kernel is the sole reason it cannot do so
+completely: this is why the quadratic kernel is degenerate here and why the gaussian one
+must be used. Fourth, converting the common mode into information requires staggering
+the receptor thresholds, which is free once $\Ebase$ is learnable.
+
+\section{Model, notation, and assumptions}
+\label{sec:model}
+
+\subsection{Notation}
+
+Every symbol used in the main text is defined here. Vectors are column vectors in
+$\RR^D$ and $\|\cdot\|$ is the Euclidean norm. Entropies and mutual informations are in
+bits.
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+Symbol & Meaning & Type \\
+\midrule
+$D$ & dimension of the chemical latent space & integer \\
+$R$ & number of receptors in the array & integer \\
+$l \in \RR^D$ & latent coordinate of the ligand presented in a sniff & random \\
+$\sigma$ & per-coordinate standard deviation of the ligand cloud & parameter \\
+$c$, $s = \ln c$ & concentration and log-concentration & random \\
+$m$, $\sigma_c$ & mean and standard deviation of $s$ & parameters \\
+$\lambda$ & affinity length scale of the gaussian kernel & parameter (fixed) \\
+$u_r \in \RR^D$ & latent coordinate of receptor $r$ & learnable \\
+$U_r = \|u_r\|$, $\uhat_r = u_r/U_r$ & norm and direction of receptor $r$ & learnable \\
+$\Ebase^{(r)}$ & baseline energy, i.e.\ $\ln EC_{50}$ at a perfect match & learnable \\
+$\Emax^{(r)}$ & selectivity ceiling, extra energy at zero match & learnable, $>0$ \\
+$d_r = \|l - u_r\|$ & latent distance from ligand to receptor $r$ & random \\
+$K_r = e^{-d_r^2/\lambda^2} \in (0,1]$ & \textbf{match} of the ligand to receptor $r$ & random \\
+$Z_r$ & \textbf{demand}, Eq.~\eqref{eq:demand} & random \\
+$\bar{z}_r$ & mean demand, the operating point of receptor $r$ & derived \\
+$\Gamma_r = \Emax^{(r)}/\sigma_c$ & \textbf{dynamic range} of receptor $r$ & derived \\
+$a_r \in \{0,1\}$, $A$, $K$ & activity, array pattern, number active & random \\
+$p_r = \uhat_r\cdot l$ & private projection of the ligand on receptor $r$ & random \\
+$\Theta$ & common mode, Eq.~\eqref{eq:Theta} & random \\
+$\tau$ & shared threshold on the private projections & random \\
+$q$ & firing probability conditional on $\tau$ & random \\
+$\nu$ & control parameter, Eq.~\eqref{eq:nudef} & derived \\
+$\rho = \sigma\sqrt{D}/\lambda$ & cloud width over kernel range & derived \\
+$w = U^2/\lambda^2$ & squared lever arm in kernel units & derived \\
+$\phi$, $\Phi$, $\Phibar$ & standard normal density, lower tail, upper tail & functions \\
+$\htwo(p)$ & binary entropy in bits & function \\
+$W(\cdot)$ & Lambert $W$ function, the inverse of $x \mapsto xe^x$ & function \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{The model}
+
+\paragraph{Environment.} One chemical family, an isotropic Gaussian cloud centred at the
+origin of the latent space (putting the centre at the origin is a choice of coordinates
+and costs nothing, since only differences $l - u_r$ appear):
+\begin{equation}
+  l \sim \mathcal{N}(0,\ \sigma^2 I_D).
+  \label{eq:ligandlaw}
+\end{equation}
+Each sniff presents exactly one ligand from \eqref{eq:ligandlaw} at a log-concentration
+drawn independently,
+\begin{equation}
+  s = \ln c \sim \mathcal{N}(m,\ \sigma_c^2),
+  \qquad s \perp l .
+  \label{eq:conclaw}
+\end{equation}
+
+\paragraph{Receptors and the gaussian kernel.} Receptor $r$ is specified by three
+learnable objects: a position $u_r \in \RR^D$, a baseline energy $\Ebase^{(r)} \in \RR$,
+and a selectivity ceiling $\Emax^{(r)} > 0$. Its half-activation concentration follows
+the \textbf{gaussian affinity kernel}, which is the
+\texttt{affinity\_kernel="gaussian"} branch of the simulator,
+\begin{equation}
+  \boxed{\;\ln EC_{50}^{(r,l)}
+   = \Ebase^{(r)} + \Emax^{(r)}\left(1 - e^{-\|l-u_r\|^2/\lambda^2}\right). }
+  \label{eq:kernel}
+\end{equation}
+It is called saturating because as the distance grows the energy tends to the finite
+ceiling $\Ebase + \Emax$ instead of diverging. The alternative
+\texttt{affinity\_kernel="quadratic"} branch, $\ln EC_{50} = \Ebase + dE\,\|l-u_r\|^2$,
+is recovered in Section~\ref{sec:gaussian} as the small-field limit of \eqref{eq:kernel}
+and is \emph{not} assumed anywhere before that.
+
+\paragraph{Readout.} The receptor is a deterministic threshold device,
+\begin{equation}
+  a_r = \mathbf{1}\!\left[\, s > \ln EC_{50}^{(r,l)} \,\right].
+  \label{eq:readout}
+\end{equation}
+
+\subsection{Assumptions, listed so they can be audited}
+
+\begin{description}
+  \item[A1 (gaussian kernel, exact).] Equation~\eqref{eq:kernel} is used as written. No
+    expansion of the kernel is made in Sections~\ref{sec:step1} to~\ref{sec:step5}. The
+    quadratic kernel appears only in Section~\ref{sec:gaussian}, clearly labelled, and
+    Section~\ref{sec:lever} shows that it is \emph{degenerate} for the question of the
+    optimal receptor placement, which is the reason the gaussian form is carried
+    throughout.
+  \item[A2 (one ligand per sniff).] The stimulus is a single pair $(l,s)$. This is the
+    regime where chemical geometry rather than mixture combinatorics limits the array.
+    Mixtures are a separate calculation.
+  \item[A3 (deterministic readout).] The map $(l,s)\mapsto A$ is deterministic and
+    noiseless, so $H(A\mid l,s)=0$ and
+    \begin{equation}
+      I\big(A;(l,s)\big) = H(A) - H(A\mid l,s) = H(A).
+      \label{eq:MIisH}
+    \end{equation}
+    Every ``MI'' below means $H(A)$. With a soft readout at finite temperature $T$ an
+    extra term $\EE[\sum_r \htwo(a_r)]$ must be subtracted.
+  \item[A4 (independence of the common mode).] In Sections~\ref{sec:step4}
+    to~\ref{sec:limits} the shared threshold is treated as independent of the private
+    projections. This is the only genuine approximation in the main derivation. Its error
+    is $O(1/D)$ per receptor and it is quantified, and removed, in
+    Section~\ref{sec:exact}.
+  \item[A5 (orthogonal directions).] Sections~\ref{sec:step3} onward assume $R\le D$ and
+    mutually orthogonal receptor directions. The opposite corner is
+    Section~\ref{sec:corner}.
+  \item[A6 (identical, balanced receptors).] Sections~\ref{sec:step3}
+    to~\ref{sec:split} assume all receptors share the same $U$, $\Ebase$ and $\Emax$, and
+    sit at the balanced operating point. This is justified by isotropy in
+    Section~\ref{sec:step3} and deliberately released in Section~\ref{sec:stagger}.
+  \item[A7 (delta method for the demand).] Section~\ref{sec:gaussian} expands
+    $\ln Z$ around its mean. Its validity condition is stated explicitly there, and
+    Section~\ref{sec:lever} shows the optimum sits at the edge of that condition, so the
+    resulting optimum is correct in scaling but not in constant.
+\end{description}
+
+\section{Step 1: match versus demand, and the exact ball}
+\label{sec:step1}
+
+\paragraph{Step 1a. Name the geometric factor.} The only place the ligand coordinate
+enters the kernel \eqref{eq:kernel} is through
+\begin{equation}
+  K_r \;\equiv\; \exp\!\left(-\frac{\|l-u_r\|^2}{\lambda^2}\right) \;\in\; (0,1],
+\end{equation}
+which we call the \textbf{match} between the ligand and receptor $r$. It equals $1$ for
+a perfectly docked ligand and tends to $0$ for a chemically remote one. In terms of it,
+\eqref{eq:kernel} reads
+\begin{equation}
+  \ln EC_{50}^{(r,l)} = \Ebase^{(r)} + \Emax^{(r)}\,(1 - K_r),
+\end{equation}
+so the half-activation energy slides linearly between $\Ebase$ at perfect match and
+$\Ebase + \Emax$ at zero match.
+
+\paragraph{Step 1b. Rearrange the firing condition.} Insert this into the readout
+\eqref{eq:readout} and isolate $K_r$. Each step is elementary:
+\begin{align}
+  a_r = 1
+  &\iff s > \Ebase + \Emax(1-K_r)
+   &&\text{(definition)} \notag\\
+  &\iff s - \Ebase - \Emax > -\Emax K_r
+   &&\text{(expand and move terms)} \notag\\
+  &\iff \Emax K_r > \Ebase + \Emax - s
+   &&\text{(multiply by }-1) \notag\\
+  &\iff K_r > \frac{\Ebase + \Emax - s}{\Emax}
+   &&(\Emax > 0).
+\end{align}
+Define the \textbf{demand}
+\begin{equation}
+  \boxed{\;Z_r \;\equiv\; \frac{\Ebase^{(r)} + \Emax^{(r)} - s}{\Emax^{(r)}}
+         \;=\; 1 - \frac{s - \Ebase^{(r)}}{\Emax^{(r)}},
+  \qquad\text{so that}\qquad
+  a_r = \mathbf{1}\!\left[\,K_r > Z_r\,\right]. }
+  \label{eq:demand}
+\end{equation}
+\textbf{A receptor fires when the match exceeds the demand.} This is exact, no expansion
+has been made, and it is the cleanest statement of what the gaussian kernel does.
+
+\paragraph{Step 1c. The demand is Gaussian, and dimensionless.} Since $Z_r$ is an affine
+function of $s$ and $s$ is Gaussian by \eqref{eq:conclaw},
+\begin{equation}
+  Z_r \sim \mathcal{N}\!\left(\bar z_r,\ \frac{1}{\Gamma_r^{2}}\right),
+  \qquad
+  \bar z_r = 1 - \frac{m - \Ebase^{(r)}}{\Emax^{(r)}},
+  \qquad
+  \Gamma_r = \frac{\Emax^{(r)}}{\sigma_c}.
+  \label{eq:Zlaw}
+\end{equation}
+Two learnable quantities have acquired a clean meaning, and they do different jobs:
+\begin{itemize}
+  \item $\Ebase$ sets $\bar z$, the \textbf{operating point}: how demanding the receptor
+    is on average, hence its firing rate. This is the balance knob.
+  \item $\Emax$ sets $\Gamma$, the \textbf{dynamic range}: the span of
+    log-concentrations the receptor can resolve, measured in units of the concentration
+    spread. Large $\Gamma$ means a receptor whose demand barely moves when the
+    concentration fluctuates, that is, a receptor insensitive to concentration noise.
+\end{itemize}
+
+\paragraph{Step 1d. The three regimes, and where saturation lives.} Because the match is
+confined to $(0,1]$, the demand being Gaussian is unbounded and two saturated outcomes
+occur with nonzero probability:
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+Demand & Outcome & Probability \\
+\midrule
+$Z_r \le 0$ & fires whatever the ligand, carries nothing & $\Phi(-\bar z_r \Gamma_r)$ \\
+$0 < Z_r \le 1$ & fires if and only if $l$ lies in a ball, Step~1e & $1$ minus the others \\
+$Z_r > 1$ & never fires, carries nothing & $\Phibar\big((1-\bar z_r)\Gamma_r\big)$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+These two atoms are the entire content of the word ``saturating''. They are absent from
+the quadratic kernel, where the demand is unbounded in both directions, and
+Section~\ref{sec:lever} shows that their absence is exactly what makes the quadratic
+kernel degenerate.
+
+\paragraph{Step 1e. The informative regime is an exact ball.} For $0 < Z_r \le 1$ take
+the logarithm of \eqref{eq:demand}. The logarithm is increasing so the inequality
+direction is preserved, and $\ln K_r = -\|l-u_r\|^2/\lambda^2$:
+\begin{equation}
+  K_r > Z_r
+  \iff -\frac{\|l-u_r\|^2}{\lambda^2} > \ln Z_r
+  \iff \boxed{\;\|l - u_r\|^2 \;<\; \mathrm{Rad}_r^2 \;\equiv\; -\lambda^2 \ln Z_r \;}
+  \label{eq:ball}
+\end{equation}
+and $-\ln Z_r \ge 0$ on this range, so the radius is real. \textbf{The receptive field of
+a homomer is exactly a ball in latent space, for the gaussian kernel as much as for the
+quadratic one.} The only thing the kernel decides is how the radius depends on the
+concentration:
+\begin{equation}
+  \text{gaussian:}\quad \mathrm{Rad}^2(s) = \lambda^2 \ln\!\frac{\Emax}{\Ebase+\Emax-s},
+  \qquad\qquad
+  \text{quadratic:}\quad \mathrm{Rad}^2(s) = \frac{s - \Ebase}{dE}.
+  \label{eq:radtwo}
+\end{equation}
+This is worth pausing on, because it is what keeps the calculation cheap. Everything
+from Step~2 to Step~9 treats $\mathrm{Rad}^2(s)$ as an unspecified scalar function of a
+scalar, so the whole derivation is kernel-agnostic and the kernel is substituted once,
+at the end.
+
+\section{Step 2: separating the common mode from the private signal}
+\label{sec:step2}
+
+\paragraph{Step 2a. Expand the square.} This is the only algebra that matters, so it is
+written in full. For any two vectors,
+\begin{align}
+  \|l-u_r\|^2
+   &= (l-u_r)\cdot(l-u_r) \notag\\
+   &= l\cdot l - 2u_r\cdot l + u_r\cdot u_r \notag\\
+   &= \underbrace{\|l\|^2}_{\text{same for all } r}
+    \;-\; \underbrace{2u_r\cdot l}_{\text{linear in } l,\ \text{specific to } r}
+    \;+\; \underbrace{\|u_r\|^2}_{\text{constant, specific to } r}.
+  \label{eq:expand}
+\end{align}
+
+\paragraph{Step 2b. Insert into the ball condition.} Using \eqref{eq:ball},
+\begin{equation}
+  a_r = 1
+  \iff \|l\|^2 - 2u_r\cdot l + U_r^2 < \mathrm{Rad}_r^2
+  \iff 2u_r\cdot l > \|l\|^2 + U_r^2 - \mathrm{Rad}_r^2 .
+\end{equation}
+
+\paragraph{Step 2c. Factor the norm out of the linear term.} Write $u_r = U_r\uhat_r$
+with $\|\uhat_r\|=1$, so $u_r \cdot l = U_r p_r$ with
+\begin{equation}
+  p_r \;\equiv\; \uhat_r \cdot l
+\end{equation}
+the \textbf{private projection}: the coordinate of the ligand along receptor $r$'s own
+direction. Dividing by the positive number $2U_r$, which preserves the inequality,
+\begin{equation}
+  \boxed{\;a_r = \mathbf{1}\!\left[\,p_r > \tau_r\,\right],
+  \qquad
+  \tau_r = \frac{\Theta_r + U_r^2}{2U_r},
+  \qquad
+  \Theta_r \equiv \|l\|^2 - \mathrm{Rad}_r^2(s) . }
+  \label{eq:Theta}
+\end{equation}
+
+\paragraph{Step 2d. Why $\Theta$ is called the common mode.} Under A6 all receptors share
+$\Ebase$ and $\Emax$, so $\mathrm{Rad}_r^2 = \mathrm{Rad}^2$ and $\Theta_r = \Theta$
+carries no index. It is one scalar random variable that the whole array is compared
+against, and it contains two contributions that enter identically:
+\begin{itemize}
+  \item $\|l\|^2$, how far the presented ligand sits from its family centre, a purely
+    geometric radial coordinate;
+  \item $-\mathrm{Rad}^2(s)$, minus the receptive-field radius, which is a monotone
+    decreasing function of the log-concentration.
+\end{itemize}
+
+\begin{remark}[A shared concentration and a breathing cloud are the same object]
+This is the first headline statement, and it is visible already in \eqref{eq:Theta}. A
+fluctuation of $\ln c$ shared by all receptors, and a fluctuation of the radius $\|l\|$
+of the ligand cloud, appear in the same scalar with the same sign structure, so they
+have identical information-theoretic consequences for the array. Everything proved below
+about the concentration spread is automatically a statement about the radial spread of
+the chemical family, and conversely.
+\end{remark}
+
+\begin{remark}[The two distinct roles of the receptor norm]
+In \eqref{eq:Theta} the norm $U_r$ appears twice, and the two effects differ:
+\begin{equation}
+  \frac{\partial \tau_r}{\partial \Theta} = \frac{1}{2U_r},
+  \qquad
+  \tau_r\big|_{\Theta=0} = \frac{U_r}{2}.
+\end{equation}
+A distant receptor is \emph{less} sensitive to the common mode, which is good, and has a
+\emph{higher} baseline threshold, which lowers its firing rate. Section~\ref{sec:lever}
+is about this trade-off, and Section~\ref{sec:stagger} uses it again.
+\end{remark}
+
+\section{Step 3: what isotropy forces on the design}
+\label{sec:step3}
+
+\begin{lemma}[The marginal firing rate depends on a receptor only through its norm]
+\label{lem:norm}
+Under \eqref{eq:ligandlaw} and \eqref{eq:conclaw}, and at fixed $\Ebase$ and $\Emax$,
+the probability $\PP(a_r=1)$ is a function of $U_r=\|u_r\|$ alone and is strictly
+decreasing in it.
+\end{lemma}
+
+\begin{proof}
+By \eqref{eq:ball}, $a_r = \mathbf{1}[\|l-u_r\|^2 < \mathrm{Rad}^2(s)]$ with
+$\mathrm{Rad}^2$ a function of $s$ only, and $s \perp l$. Since
+$l \sim \mathcal{N}(0,\sigma^2 I_D)$, the vector $(l-u_r)/\sigma$ is normal with mean
+$-u_r/\sigma$, so
+\begin{equation}
+  \frac{\|l-u_r\|^2}{\sigma^2}\sim\chi'^2_D\!\left(\frac{\|u_r\|^2}{\sigma^2}\right),
+\end{equation}
+a noncentral chi-square with $D$ degrees of freedom and noncentrality
+$\|u_r\|^2/\sigma^2$. Its law depends on $u_r$ only through $\|u_r\|$, giving the first
+claim. A noncentral chi-square is stochastically increasing in its noncentrality, so
+$\|l-u_r\|^2$ stochastically increases with $U_r$ and the probability that it falls below
+an independent threshold strictly decreases.
+\end{proof}
+
+\begin{remark}[Why this forces equal norms, given equal $\Ebase$ and $\Emax$]
+A binary variable has maximal entropy at marginal $1/2$. By Lemma~\ref{lem:norm}, at
+fixed $\Ebase$ and $\Emax$ the equation $\PP(a_r=1)=1/2$ has exactly one solution in
+$U_r$, the same for every receptor, so all receptors sit on one sphere and only their
+directions are free. That is assumption A6. Note the caveat that matters later: once
+$\Ebase$ is allowed to differ between receptors, balance can be achieved at \emph{any}
+norm by compensating with the baseline, and the argument for equal norms collapses. That
+is the subject of Sections~\ref{sec:lever} and \ref{sec:stagger}.
+\end{remark}
+
+\begin{lemma}[Orthogonal directions give independent private projections]
+\label{lem:orth}
+If $\uhat_1,\dots,\uhat_R$ are orthonormal and $R\le D$ then $p_1,\dots,p_R$ are
+independent with $p_r\sim\mathcal{N}(0,\sigma^2)$. In general
+$\Cov(p_r,p_{r'})=\sigma^2\,\uhat_r\cdot\uhat_{r'}$.
+\end{lemma}
+
+\begin{proof}
+$p=\hat V^\top l$ with $\hat V$ the $D\times R$ matrix of directions. A linear image of a
+Gaussian is Gaussian, with mean $0$ and covariance
+$\hat V^\top(\sigma^2 I_D)\hat V = \sigma^2\hat V^\top \hat V$, whose entries are
+$\sigma^2\uhat_r\cdot\uhat_{r'}$. Orthonormality makes this $\sigma^2 I_R$, and for a
+Gaussian vector a diagonal covariance is equivalent to independence. Extending
+$\{\uhat_r\}$ to an orthonormal basis exhibits the $p_r$ as coordinates of $l$ in that
+basis, which are independent and identically distributed $\mathcal{N}(0,\sigma^2)$.
+\end{proof}
+
+Under A5 and A6 the array therefore collapses to its final and much simpler form,
+\begin{equation}
+  \boxed{\;a_r = \mathbf{1}[p_r > \tau],
+  \qquad
+  \tau = \frac{\Theta + U^2}{2U},
+  \qquad
+  p_r \stackrel{\text{iid}}{\sim}\mathcal{N}(0,\sigma^2),}
+  \label{eq:tau}
+\end{equation}
+with one and the same $\tau$ for every receptor: \emph{$R$ independent Gaussian variables
+cut by a single common random threshold}.
+
+\section{Step 4: conditioning on the common mode}
+\label{sec:step4}
+
+\paragraph{Step 4a. Freeze the common mode.} Adopt A4 and treat $\tau$ as independent of
+$(p_1,\dots,p_R)$. Conditionally on $\tau=t$ the activities $a_r=\mathbf{1}[p_r>t]$ are
+functions of independent variables, hence independent, and identically distributed:
+\begin{equation}
+  q(t) \;\equiv\; \PP(p_r > t)
+       \;=\; \PP\!\left(\frac{p_r}{\sigma} > \frac{t}{\sigma}\right)
+       \;=\; \Phibar\!\left(\frac{t}{\sigma}\right).
+  \label{eq:q}
+\end{equation}
+
+\paragraph{Step 4b. The conditional law of the pattern.} For a pattern
+$a\in\{0,1\}^R$ with $k=\sum_r a_r$ active receptors,
+\begin{align}
+  \PP(A=a\mid \tau=t)
+   &= \prod_{r=1}^R q(t)^{a_r}\big(1-q(t)\big)^{1-a_r}
+     &&\text{(conditional independence)}\notag\\
+   &= q(t)^{\sum_r a_r}\big(1-q(t)\big)^{R-\sum_r a_r}
+     &&\text{(collect equal factors)}\notag\\
+   &= q(t)^{k}\big(1-q(t)\big)^{R-k}.
+     &&\text{(definition of } k)
+\end{align}
+The right-hand side depends on the pattern \emph{only through $k$}, which is the
+property that makes the problem tractable.
+
+\paragraph{Step 4c. Average over the common mode.} Writing $\Pi_k$ for the resulting
+pattern probability,
+\begin{equation}
+  \PP(A=a) = \EE_\tau\!\left[q(\tau)^k\big(1-q(\tau)\big)^{R-k}\right] \equiv \Pi_k,
+  \qquad k=\textstyle\sum_r a_r .
+  \label{eq:Pi}
+\end{equation}
+So $A$ is an \textbf{exchangeable} binary vector, a mixture of independent and
+identically distributed Bernoulli vectors with mixing variable $q(\tau)\in[0,1]$. This is
+the finite de Finetti representation, obtained constructively rather than invoked.
+
+\paragraph{Step 4d. The law of the count.} There are $\binom{R}{k}$ patterns with $k$
+active receptors, each of probability $\Pi_k$, so
+\begin{equation}
+  \PP(K=k) = \binom{R}{k}\Pi_k, \qquad k=0,\dots,R.
+  \label{eq:PK}
+\end{equation}
+
+\begin{sanity}
+$\sum_k \binom{R}{k}\Pi_k
+ = \EE_\tau\big[\sum_k\binom{R}{k}q^k(1-q)^{R-k}\big]
+ = \EE_\tau\big[(q+1-q)^R\big] = 1$ by the binomial theorem. This is the first assertion
+to put in any implementation.
+\end{sanity}
+
+\section{Step 5: statistics of the common mode, for any kernel}
+\label{sec:step5}
+
+This section uses only that $\mathrm{Rad}^2$ is some function of $s$, so it holds for
+both kernels.
+
+\paragraph{Step 5a. Mean and variance of $\|l\|^2$.} Write
+$\|l\|^2=\sum_{i=1}^D l_i^2$ with $l_i$ independent $\mathcal{N}(0,\sigma^2)$. Then
+$l_i^2/\sigma^2\sim\chi^2_1$, which has mean $1$ and variance $2$. Summing $D$
+independent copies and multiplying by $\sigma^2$,
+\begin{equation}
+  \EE\big[\|l\|^2\big]=D\sigma^2, \qquad \Var\big[\|l\|^2\big]=2D\sigma^4 .
+  \label{eq:radial}
+\end{equation}
+
+\paragraph{Step 5b. Mean and variance of the common mode.} From
+$\Theta=\|l\|^2-\mathrm{Rad}^2(s)$ with $s\perp l$, variances add:
+\begin{equation}
+  \EE[\Theta]=D\sigma^2-\EE[\mathrm{Rad}^2],
+  \qquad
+  \Var[\Theta]=2D\sigma^4+\Var[\mathrm{Rad}^2].
+  \label{eq:Thetastats}
+\end{equation}
+Equation~\eqref{eq:Thetastats} is the quantitative version of the remark in
+Section~\ref{sec:step2}: the geometric term and the concentration term sit side by side
+in one sum.
+
+\paragraph{Step 5c. The balance condition.} Apply the affine map
+$\tau=(\Theta+U^2)/(2U)$ and set $\EE[\tau]=0$, which centres the firing probability on
+$q=1/2$. The numerator must vanish:
+\begin{equation}
+  \boxed{\;\EE\big[\mathrm{Rad}^2(s)\big] \;=\; D\sigma^2 + U^2 . }
+  \label{eq:balance}
+\end{equation}
+In words, and independently of the kernel: \emph{the mean squared radius of the
+receptive field must equal the mean squared distance from the receptor to a ligand},
+since $\EE\|l-u_r\|^2 = D\sigma^2 + U^2$. Note what has changed relative to a model with
+a fixed baseline. Equation~\eqref{eq:balance} constrains $\Ebase$, which is learnable,
+and therefore it does \emph{not} determine $U$. The norm remains free, and fixing it is
+the job of Section~\ref{sec:lever}.
+
+\begin{remark}[Exact symmetry of the balanced point]
+At $\EE[\tau]=0$ with $\tau$ symmetric about zero the mean firing rate is exactly one
+half: $\tau \overset{d}{=} -\tau$ gives
+$\EE[\Phibar(\tau/\sigma)]=\EE[\Phibar(-\tau/\sigma)]=\EE[1-\Phibar(\tau/\sigma)]$,
+hence $2\EE[q]=1$. Balance controls the mean of $q$, not merely its median.
+\end{remark}
+
+\paragraph{Step 5d. The control parameter.} All that remains is the \emph{spread} of
+$q$, and by \eqref{eq:q} that spread is the standard deviation of $\tau$ measured in
+units of the private-projection scale $\sigma$:
+\begin{equation}
+  \boxed{\;\nu \;\equiv\; \frac{\sd(\tau)}{\sigma}
+   \;=\; \frac{\sqrt{\,2D\sigma^4+\Var[\mathrm{Rad}^2(s)]\,}}{2U\sigma}, }
+  \qquad\text{so that}\qquad
+  \frac{\tau}{\sigma} = \nu z,\quad z\sim\mathcal{N}(0,1),\quad q=\Phibar(\nu z),
+  \label{eq:nudef}
+\end{equation}
+the last form holding at balance and to the extent that $\Theta$ is Gaussian, which it is
+for large $D$ by the central limit theorem applied to $\|l\|^2$. In words, $\nu$ is the
+ratio of the common-mode fluctuation, which pushes every receptor the same way, to the
+private signal, which pushes each receptor differently.
+
+\section{Step 6: specialising to the gaussian kernel}
+\label{sec:gaussian}
+
+\paragraph{Step 6a. The radius in terms of the demand.} From \eqref{eq:ball},
+$\mathrm{Rad}^2=-\lambda^2\ln Z$ with $Z\sim\mathcal{N}(\bar z,\Gamma^{-2})$ by
+\eqref{eq:Zlaw}. So the two moments we need are those of $\ln Z$.
+
+\paragraph{Step 6b. Expand the logarithm about the mean demand (A7).} Write
+$Z=\bar z(1+\varepsilon)$ with $\varepsilon=(Z-\bar z)/\bar z$, so $\varepsilon$ has mean
+zero and standard deviation $1/(\Gamma\bar z)$. Using
+$\ln(1+\varepsilon)=\varepsilon-\varepsilon^2/2+O(\varepsilon^3)$,
+\begin{equation}
+  \EE[\ln Z] \simeq \ln\bar z - \frac{1}{2\Gamma^2\bar z^2},
+  \qquad
+  \Var[\ln Z] \simeq \frac{1}{\Gamma^2\bar z^2}.
+  \label{eq:deltamethod}
+\end{equation}
+
+\begin{warning}
+\label{warn:delta}
+Equation~\eqref{eq:deltamethod} requires $\Gamma\bar z \gg 1$, that is, a demand whose
+fluctuations are small compared to its mean. Equivalently it requires the saturation
+probabilities of Step~1d to be negligible. This is not automatic, because the optimizer
+will be shown to drive $\bar z$ down. Step~7e evaluates the condition \emph{at the
+optimum} in closed form and finds that it holds comfortably for $\rho\lesssim1$ and
+fails for $\rho\gtrsim1.5$, so the formulas below are quantitative in the first regime
+and only indicative in the second.
+\end{warning}
+
+\paragraph{Step 6c. Impose balance and read off the operating point.} Substituting
+$\EE[\mathrm{Rad}^2]=-\lambda^2\EE[\ln Z]\simeq-\lambda^2\ln\bar z$ into the balance
+condition \eqref{eq:balance}, and introducing the two natural dimensionless groups
+\begin{equation}
+  \rho^2 \equiv \frac{D\sigma^2}{\lambda^2}
+   \quad(\text{cloud width over kernel range, squared}),
+  \qquad
+  w \equiv \frac{U^2}{\lambda^2}
+   \quad(\text{squared lever arm in kernel units}),
+\end{equation}
+we obtain
+\begin{equation}
+  -\lambda^2\ln\bar z = D\sigma^2+U^2
+  \qquad\Longleftrightarrow\qquad
+  \boxed{\;\bar z = e^{-(\rho^2+w)} . }
+  \label{eq:zbar}
+\end{equation}
+The mean demand must equal the typical match, which is what balance means in the
+language of Step~1b. Since $\bar z$ is set by $\Ebase$ through \eqref{eq:Zlaw}, this
+determines the learnable baseline and nothing else.
+
+\paragraph{Step 6d. The concentration contribution to the common mode.} Combining
+\eqref{eq:deltamethod} and \eqref{eq:zbar},
+\begin{equation}
+  \sd\big[\mathrm{Rad}^2\big] = \lambda^2\,\sd[\ln Z]
+   \simeq \frac{\lambda^2}{\Gamma\bar z}
+   = \frac{\lambda^2}{\Gamma}\,e^{\rho^2+w}.
+  \label{eq:sdrad}
+\end{equation}
+\textbf{The concentration noise seen by the receptor grows exponentially with its
+squared lever arm.} The mechanism is transparent in the match-versus-demand picture: a
+distant receptor needs a large receptive field to stay balanced, a large field means a
+small demand $\bar z$, and a small demand is a small number whose logarithm is violently
+sensitive to the Gaussian jitter of size $1/\Gamma$.
+
+\paragraph{Step 6e. The control parameter for the gaussian kernel.} Substitute
+\eqref{eq:sdrad} into \eqref{eq:nudef}. Using $\sigma^2/\lambda^2=\rho^2/D$ to make
+everything dimensionless,
+\begin{equation}
+  \boxed{\;\nu^2(w) \;=\; \frac{1}{w}\left[\,\underbrace{\frac{\rho^2}{2}}_{\textstyle P}
+   \;+\; \underbrace{\frac{D\,e^{2\rho^2}}{4\rho^2\Gamma^2}}_{\textstyle Q}\,e^{2w}\right]
+   \;=\; \frac{P+Qe^{2w}}{w} . }
+  \label{eq:nugauss}
+\end{equation}
+The first term is the radial common mode, which a longer lever arm suppresses. The
+second is the concentration common mode, which a longer lever arm amplifies. Their
+competition is the content of the next section.
+
+\paragraph{Step 6f. The quadratic kernel as the small-field limit.} Take
+$\rho^2+w\ll 1$, meaning both the ligand cloud and the receptor offset are small
+compared with the kernel range, so by \eqref{eq:zbar} $\bar z\to 1$ and the receptive
+field radius $\mathrm{Rad}^2 \ll \lambda^2$. Then
+\begin{equation}
+  \mathrm{Rad}^2 = -\lambda^2\ln Z
+   = -\lambda^2\ln\!\left(1-\frac{s-\Ebase}{\Emax}\right)
+   \simeq \lambda^2\,\frac{s-\Ebase}{\Emax}
+   = \frac{s-\Ebase}{dE},
+   \qquad dE \equiv \frac{\Emax}{\lambda^2},
+\end{equation}
+which is exactly the \texttt{quadratic} branch of \eqref{eq:radtwo}. In the same limit
+$e^{2w}\to1$ in \eqref{eq:nugauss} and
+\begin{equation}
+  \nu^2_{\text{quad}}(w) = \frac{1}{w}\left[\frac{\rho^2}{2}+\frac{D}{4\rho^2\Gamma^2}\right],
+  \qquad\text{equivalently}\qquad
+  \nu^2_{\text{quad}} = \frac{2D\sigma^4 + \sigma_c^2/dE^2}{4U^2\sigma^2}.
+  \label{eq:nuquad}
+\end{equation}
+The quadratic kernel is therefore not a different model, it is the gaussian kernel for a
+receptor whose field is small compared with its own affinity range.
+
+\begin{remark}[Why the quadratic kernel cannot answer the placement question]
+Expression \eqref{eq:nuquad} is \emph{monotonically decreasing} in $w$, with no interior
+optimum. Under the quadratic kernel the optimizer can send $U\to\infty$, compensate with
+the learnable baseline to stay balanced, drive $\nu\to0$, and collect the full $R$ bits
+in any environment. That is a degeneracy of the kernel, not a property of the chemistry,
+and it is the reason this document carries the gaussian form. It also predicts what one
+would see in a simulation run with \texttt{affinity\_kernel="quadratic"}: receptor norms
+drifting outward without converging, and baselines drifting down to match.
+\end{remark}
+
+\section{Step 7: the optimal lever arm}
+\label{sec:lever}
+
+\paragraph{Step 7a. Minimise over the lever arm.} Differentiate \eqref{eq:nugauss} using
+the quotient rule:
+\begin{equation}
+  \frac{\mathrm{d}}{\mathrm{d}w}\,\frac{P+Qe^{2w}}{w}
+   = \frac{2Qe^{2w}\,w-\big(P+Qe^{2w}\big)}{w^2},
+\end{equation}
+so the stationarity condition is
+\begin{equation}
+  Q\,e^{2w}\,(2w-1) = P .
+  \label{eq:stationary}
+\end{equation}
+
+\paragraph{Step 7b. Solve it with the Lambert function.} Substitute
+$\Lambda \equiv 2w-1$, so $w=(\Lambda+1)/2$ and $e^{2w}=e^{\Lambda+1}$:
+\begin{equation}
+  Q\,e^{\Lambda+1}\,\Lambda = P
+  \quad\Longleftrightarrow\quad
+  \Lambda e^{\Lambda} = \frac{P}{Q\,e}
+  \quad\Longleftrightarrow\quad
+  \boxed{\;\Lambda = W\!\left(\frac{P}{Qe}\right), \qquad w_\star=\frac{1+\Lambda}{2}, }
+  \label{eq:lambertsol}
+\end{equation}
+where $W$ is the Lambert function, defined as the inverse of $x\mapsto xe^x$.
+
+\paragraph{Step 7c. The minimum value.} At the optimum \eqref{eq:stationary} gives
+$Qe^{2w_\star}=P/\Lambda$, so
+\begin{equation}
+  \nu_{\min}^2 = \frac{P+P/\Lambda}{w_\star}
+   = \frac{P\,(1+1/\Lambda)}{(1+\Lambda)/2}
+   = \frac{2P}{\Lambda}\cdot\frac{(\Lambda+1)/\Lambda}{(\Lambda+1)/\Lambda}
+   = \frac{2P}{\Lambda},
+\end{equation}
+that is, substituting $P=\rho^2/2$,
+\begin{equation}
+  \boxed{\;\nu_{\min}^2 = \frac{\rho^2}{\Lambda},
+   \qquad \Lambda = W\!\left(\frac{2\rho^4\Gamma^2}{D}\,e^{-2\rho^2-1}\right). }
+  \label{eq:numin}
+\end{equation}
+
+\paragraph{Step 7d. Read it in the large-dynamic-range limit.} For large argument
+$W(x)\simeq\ln x-\ln\ln x$, and here
+$\ln x = 2\ln\Gamma+\ln(2\rho^4/D)-2\rho^2-1$, so $\Lambda$ grows like $2\ln\Gamma$.
+Keeping only that leading term,
+\begin{equation}
+  \boxed{\;\nu_{\min}\;\simeq\;\frac{\rho}{\sqrt{2\ln\Gamma}},
+   \qquad
+   w_\star \simeq \ln\Gamma,
+   \qquad\text{that is}\qquad
+   U_\star \simeq \lambda\sqrt{\ln\Gamma}, }
+  \label{eq:scaling}
+\end{equation}
+with $\rho=\sigma\sqrt{D}/\lambda$ and $\Gamma=\Emax/\sigma_c$. The subleading constants
+dropped here are not small at realistic $\Gamma$: for $D=10$, $\rho^2=0.4$ and
+$\Gamma=100$ one finds $\Lambda=2.90$ against $2\ln\Gamma=9.21$. Use the Lambert form
+\eqref{eq:numin} for numbers and \eqref{eq:scaling} for intuition. Three statements
+follow, and they are the practical output of the document.
+\begin{enumerate}
+  \item \textbf{The common mode can be suppressed, but only logarithmically.} The
+    penalty from the ligand cloud is linear in $\rho$, while the array's defence against
+    it grows only as $\sqrt{\ln\Gamma}$. Doubling the dynamic range of every receptor
+    buys a factor $\sqrt{1+\ln 2/\ln\Gamma}$, which is nothing.
+  \item \textbf{The controlling environment parameter is $\rho$, not the concentration
+    gap.} The combination $m-\Ebase$ is set by the optimizer through \eqref{eq:zbar}, so
+    sweeping it does nothing. The knob is $\rho=\sigma\sqrt{D}/\lambda$, which is the
+    same kernel-geometry ratio identified in
+    \texttt{doc/theory/08\_environmental\_entropy\_limits.md}.
+  \item \textbf{A directly checkable prediction.} Optimised receptors should sit at
+    distance $U_\star\simeq\lambda\sqrt{\ln\Gamma}$ from the cloud centre, which is a few
+    times $\lambda$ and is \emph{not} the cloud radius $\sigma\sqrt{D}$, together with
+    strongly negative baselines given by \eqref{eq:zbar}. This can be read off any
+    already-optimised array without running anything new.
+\end{enumerate}
+
+\paragraph{Step 7e. Self-consistency: is the delta method valid at its own optimum?}
+The validity group of Warning~\ref{warn:delta} can be evaluated at $w_\star$ in closed
+form, which is worth doing because the answer is not obvious. Use
+$\Lambda e^{\Lambda}=A$ with $A=P/(Qe)$, so $e^{-\Lambda/2}=\sqrt{\Lambda/A}$, and
+$\bar z = e^{-(\rho^2+w_\star)}$ with $w_\star=(1+\Lambda)/2$:
+\begin{align}
+  \Gamma\bar z\Big|_{w_\star}
+   &= \Gamma\,e^{-\rho^2}\,e^{-1/2}\,e^{-\Lambda/2}
+    = \Gamma\,e^{-\rho^2-1/2}\sqrt{\frac{\Lambda}{A}} \notag\\
+   &= \Gamma\,e^{-\rho^2-1/2}\,
+      \sqrt{\frac{\Lambda D\,e^{2\rho^2+1}}{2\rho^4\Gamma^2}}
+    = \boxed{\;\sqrt{\frac{\Lambda D}{2\rho^4}}\;}
+  \label{eq:selfcons}
+\end{align}
+The dependence on $\Gamma$ cancels exactly: \emph{at its own optimum the receptor's
+operating point is set by the geometry alone}. The delta method is therefore
+self-consistent whenever $\rho^4 \ll \Lambda D/2$, that is for a ligand cloud narrow
+compared with the kernel range, and it degrades as $\rho$ approaches $D^{1/4}$.
+Numerically, for $D=10$ and $\sigma=1$:
+
+\begin{center}
+\begin{tabular}{rrrrrrr}
+\toprule
+$\lambda$ & $\rho$ & $\Gamma$ & $\Lambda$ & $U_\star$ & $\nu_{\min}$ & $\Gamma\bar z$ \ (sat.\ prob.) \\
+\midrule
+$5.0$ & $0.63$ & $10$  & $0.37$ & $4.13$ & $1.04$ & $3.38$ \ ($4\times10^{-4}$) \\
+$5.0$ & $0.63$ & $100$ & $2.90$ & $6.98$ & $0.37$ & $9.52$ \ ($\approx 0$) \\
+$2.0$ & $1.58$ & $10$  & $0.24$ & $1.58$ & $3.21$ & $0.44$ \ ($0.33$) \\
+$1.5$ & $2.11$ & $10$  & $0.02$ & $1.07$ & $15.0$ & $0.07$ \ ($0.47$) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Three things to take from the table. First, the first row is an ordinary parameter
+choice that lands at $\nu_{\min}\approx1$, the most informative point: the interesting
+regime is not exotic. Second, $\lambda$ alone sweeps $\nu$ over more than a decade,
+which makes it the knob of choice. Third, saturation is negligible where the theory is
+quantitative and becomes dominant only once $\rho\gtrsim1.5$, so the atoms of Step~1d
+are not what creates the optimum. What creates it is the \emph{curvature} of
+$\mathrm{Rad}^2=-\lambda^2\ln Z$: because the match is bounded above by $1$, a receptor
+with a large field must operate at small $\bar z$, where the logarithm amplifies the
+concentration jitter. A kernel without that bound, such as the quadratic one, has no
+such amplification and no optimum.
+
+\begin{remark}[Saturation is an exact, additive loss]
+This can be stated without any expansion. By Step~1d, whenever $Z\le0$ or $Z>1$ the
+receptor's conditional firing probability is $1$ or $0$, and $\htwo(1)=\htwo(0)=0$, so
+those sniffs contribute nothing to the per-receptor efficiency $\EE[\htwo(q)]$ defined in
+Section~\ref{sec:step6}. Hence the exact bound
+\begin{equation}
+  \EE[\htwo(q)] \;\le\; 1 - \Phi(-\bar z\Gamma) - \Phibar\big((1-\bar z)\Gamma\big),
+\end{equation}
+valid for any design. The saturation probability is subtracted from the array's
+efficiency one for one.
+\end{remark}
+
+\section{Step 8: the mutual information, by two routes}
+\label{sec:step6}
+
+Two derivations are given because they must agree, and their agreement is the best
+available check on an implementation.
+
+\subsection{Route 1: direct summation over patterns}
+
+\paragraph{Step 8a.} Start from the definition and group the $2^R$ patterns by their
+number of active receptors, using that $\PP(A=a)=\Pi_k$ depends only on $k$:
+\begin{align}
+  H(A) &= -\sum_{a\in\{0,1\}^R}\PP(A=a)\log_2\PP(A=a) \notag\\
+       &= -\sum_{k=0}^{R}\ \sum_{a:|a|=k}\Pi_k\log_2\Pi_k \notag\\
+       &= -\sum_{k=0}^{R}\binom{R}{k}\Pi_k\log_2\Pi_k .
+\end{align}
+
+\paragraph{Step 8b.} Substitute $\Pi_k=\PP(K=k)/\binom{R}{k}$ from \eqref{eq:PK} and use
+$\log_2(x/y)=\log_2 x-\log_2 y$:
+\begin{align}
+  H(A) &= -\sum_k \PP(K=k)\log_2\!\left[\frac{\PP(K=k)}{\binom{R}{k}}\right] \notag\\
+       &= -\sum_k \PP(K=k)\log_2 \PP(K=k) + \sum_k \PP(K=k)\log_2\binom{R}{k},
+\end{align}
+that is
+\begin{equation}
+  \boxed{\;H(A)=H(K)+\EE\!\left[\log_2\binom{R}{K}\right].}
+  \label{eq:grouping}
+\end{equation}
+The first term is the information carried by \emph{how many} receptors fire, the second
+by \emph{which} ones, which here is just the logarithm of the number of equally likely
+arrangements. This is the same grouping identity already used in the project's
+discrete-information notes, so the two formalisms agree.
+
+\subsection{Route 2: the chain rule through the mixing variable}
+
+\paragraph{Step 8c.} Condition on $\tau$ and use $H(A)=H(A\mid\tau)+I(A;\tau)$. By
+conditional independence and additivity of entropy over independent variables,
+$H(A\mid\tau=t)=\sum_r \htwo(q(t))=R\,\htwo(q(t))$, so
+\begin{equation}
+  \boxed{\;H(A)=R\,\EE\big[\htwo(q)\big]+I(A;q).}
+  \label{eq:chain}
+\end{equation}
+
+\paragraph{Step 8d. Reading \eqref{eq:chain}.} The first term is a \emph{per-receptor
+yield}: each receptor contributes $\EE[\htwo(q)]\le1$ bits instead of the ideal bit, and
+the deficit is caused entirely by the common mode pulling $q$ away from $1/2$. The
+second is what the array learns about the common mode itself, which for a one-parameter
+mixture grows only logarithmically,
+\begin{equation}
+  I(A;q)\simeq\tfrac12\log_2 R+\text{const}
+  \qquad (R\to\infty,\ \nu \text{ fixed}),
+  \label{eq:clarke}
+\end{equation}
+the standard asymptotic for the mutual information between a scalar parameter and $R$
+conditionally independent observations of it. The constant involves the entropy of the
+mixing density and the Fisher information of the Bernoulli family. The precise statement
+should be verified before it is cited; only the $\frac12\log_2 R$ scaling is used below.
+
+\paragraph{Step 8e. The working formula.} Combining,
+\begin{equation}
+  \boxed{\;\mathrm{MI}=H(A)\simeq R\,
+   \underbrace{\EE_z\big[\htwo\big(\Phibar(\nu z)\big)\big]}_{\textstyle \eta(\nu)}
+   +\tfrac12\log_2 R+\text{const},}
+  \label{eq:working}
+\end{equation}
+where $\eta(\nu)\in[0,1]$ is the \textbf{information efficiency per receptor}. It is a
+single one-dimensional Gaussian integral, computable to machine precision by
+Gauss--Hermite quadrature, and it depends on nothing but $\nu$.
+
+\section{Step 9: limits, asymptotics, and worked numbers}
+\label{sec:limits}
+
+\subsection{The ideal limit $\nu\to0$}
+
+\paragraph{Step 9a.} Expand the Gaussian tail about zero. Since $\Phibar'=-\phi$ and
+$\Phibar(0)=1/2$,
+\begin{equation}
+  q=\Phibar(\nu z)=\tfrac12-\phi(0)\nu z+O(\nu^3),
+  \qquad \phi(0)=\frac{1}{\sqrt{2\pi}},
+\end{equation}
+so $\epsilon\equiv q-\tfrac12=-\phi(0)\nu z+O(\nu^3)$.
+
+\paragraph{Step 9b.} Expand the binary entropy about its maximum. Its derivatives are
+$\htwo'(p)=\log_2\frac{1-p}{p}$ and $\htwo''(p)=-\frac{1}{\ln2}\frac{1}{p(1-p)}$, so
+$\htwo'(1/2)=0$, $\htwo''(1/2)=-4/\ln2$, and
+\begin{equation}
+  \htwo\!\left(\tfrac12+\epsilon\right)=1-\frac{2}{\ln2}\epsilon^2+O(\epsilon^4).
+\end{equation}
+
+\paragraph{Step 9c.} Take the expectation with $\EE[z^2]=1$ and $\phi(0)^2=1/(2\pi)$:
+\begin{equation}
+  \EE[\epsilon^2]=\frac{\nu^2}{2\pi}
+  \qquad\Longrightarrow\qquad
+  \boxed{\;\eta(\nu)=1-\frac{\nu^2}{\pi\ln2}+O(\nu^4)=1-0.4592\,\nu^2+O(\nu^4).}
+  \label{eq:smallnu}
+\end{equation}
+A $10\%$ loss per receptor requires $\nu\approx0.47$. Numerically this expansion is good
+to about $2\%$ at $\nu=0.5$ and useless beyond $\nu\approx0.7$.
+
+\subsection{The exactly solvable point $\nu=1$}
+
+\paragraph{Step 9d.} At $\nu=1$ the tail function is evaluated at a draw from its own
+distribution, and $\Phibar(z)\sim\mathrm{Uniform}(0,1)$. Hence, using
+$\htwo(q)=\htwo(1-q)$ to merge the two halves of the binary entropy,
+\begin{align}
+  \eta(1)&=\int_0^1\htwo(q)\,\mathrm{d}q
+         =-2\int_0^1 q\log_2 q\,\mathrm{d}q
+         =-\frac{2}{\ln2}\int_0^1 q\ln q\,\mathrm{d}q \notag\\
+         &=-\frac{2}{\ln2}\left[\frac{q^2}{2}\ln q-\frac{q^2}{4}\right]_0^1
+          =\boxed{\frac{1}{2\ln2}\approx0.7213\ \text{bits}.}
+  \label{eq:nu1}
+\end{align}
+At $\nu=1$ the array has lost $28\%$ of its information per receptor, which is
+comfortably measurable. Numerical quadrature confirms $\eta(1)=0.72135$.
+
+\subsection{The common-mode-dominated limit $\nu\gg1$}
+
+\paragraph{Step 9e.} Change variables, $x=\nu z$, so $\mathrm{d}z=\mathrm{d}x/\nu$:
+\begin{equation}
+  \eta(\nu)=\int\phi(z)\,\htwo\big(\Phibar(\nu z)\big)\mathrm{d}z
+           =\frac1\nu\int\phi\!\left(\frac{x}{\nu}\right)\htwo\big(\Phibar(x)\big)\mathrm{d}x .
+\end{equation}
+
+\paragraph{Step 9f.} The factor $\htwo(\Phibar(x))$ is appreciable only for
+$|x|\lesssim4$, over which $\phi(x/\nu)\simeq\phi(0)$ when $\nu\gg1$. Hence
+\begin{equation}
+  \boxed{\;\eta(\nu)\simeq\frac{\phi(0)\mathcal{A}}{\nu}\approx\frac{1.0397}{\nu},
+  \qquad
+  \mathcal{A}=\int_{-\infty}^{\infty}\htwo\big(\Phibar(x)\big)\mathrm{d}x=2.60608 . }
+  \label{eq:largenu}
+\end{equation}
+The constant was obtained by quadrature and the asymptote is accurate to better than
+$5\%$ for $\nu\ge3$. The memorable form is $R_{\mathrm{eff}}=R\,\eta(\nu)\approx R/\nu$:
+\textbf{$\nu$ counts the receptors the array wastes per receptor it uses.}
+
+\subsection{The three regimes}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+Regime & Mutual information & Character \\
+\midrule
+$\nu\lesssim1$ & $R(1-0.459\nu^2)$ & near-ideal, flat in every parameter \\
+$1\lesssim\nu\lesssim R/\log_2 R$ & $\approx1.04R/\nu+\tfrac12\log_2 R$ & graceful degradation \\
+$\nu\gtrsim R/\log_2 R$ & $O(\log_2 R)$, down to $1$ bit & array slaved to the common mode \\
+\bottomrule
+\end{tabular}
+\end{center}
+The second crossover follows from $1.04R/\nu=\tfrac12\log_2R$, giving
+$\nu_\star\approx2.08R/\log_2R$. The collapse to a single bit is therefore \emph{not} at
+$\nu\sim1$: between $\nu=1$ and $\nu\sim R/\log R$ the array degrades as $R/\nu$.
+
+\subsection{Worked numbers for the gaussian kernel}
+
+Combining the optimal lever arm of Step~7e with $\eta(\nu)$, for $D=10$ and $\sigma=1$:
+\begin{center}
+\begin{tabular}{rrrrrl}
+\toprule
+$\lambda$ & $\rho$ & $\Gamma=\Emax/\sigma_c$ & $\nu_{\min}$ & $\eta(\nu_{\min})$ & MI per receptor \\
+\midrule
+$5.0$ & $0.63$ & $100$ & $0.37$ & $0.942$ & near-ideal, sweeps look flat \\
+$5.0$ & $0.63$ & $10$  & $1.04$ & $0.706$ & $29\%$ loss, clearly measurable \\
+$2.0$ & $1.58$ & $10$  & $3.21$ & $0.308$ & strongly degraded \\
+$1.5$ & $2.11$ & $10$  & $15.0$ & $0.069$ & array nearly collapsed \\
+\bottomrule
+\end{tabular}
+\end{center}
+The operational message is that \textbf{$\lambda$ is the knob}. Holding the environment
+fixed and varying the affinity length scale alone moves the array from the saturated
+regime to near-collapse. Sweeping $m-\Ebase$ instead does nothing, because the optimizer
+resets the baseline through \eqref{eq:zbar}.
+
+\section{Step 10: what assumption A4 costs, and how to remove it}
+\label{sec:exact}
+
+\paragraph{Step 10a. Where the dependence hides.} Decompose the ligand in the orthonormal
+receptor basis extended to all of $\RR^D$,
+\begin{equation}
+  l=\sum_{j=1}^R p_j\uhat_j+l_\perp,
+  \qquad
+  \|l\|^2=\sum_{j=1}^R p_j^2+W,
+  \qquad
+  W\equiv\|l_\perp\|^2\sim\sigma^2\chi^2_{D-R}.
+\end{equation}
+So the common mode $\Theta=\|l\|^2-\mathrm{Rad}^2(s)$ is not independent of the private
+projections: it contains their squares. Assumption A4 ignored this.
+
+\paragraph{Step 10b. The exact per-receptor condition.} Since $u_r=U\uhat_r$ has
+component $U$ along $\uhat_r$ and zero elsewhere,
+$\|l-u_r\|^2=(p_r-U)^2+\sum_{j\neq r}p_j^2+W$, so by \eqref{eq:ball}
+\begin{equation}
+  \boxed{\;a_r=1 \iff (p_r-U)^2<\mathcal{R}_r^2,
+  \qquad
+  \mathcal{R}_r^2\equiv \mathrm{Rad}^2(s)-W-\sum_{j\neq r}p_j^2 . }
+  \label{eq:exactcond}
+\end{equation}
+The firing set in a receptor's own private coordinate is an \emph{interval}
+$|p_r-U|<\mathcal{R}_r$, not a half-line.
+
+\paragraph{Step 10c. The two things A4 actually did.}
+\begin{enumerate}
+  \item \textbf{The far edge was dropped.} The condition $p_r<U+\mathcal{R}_r$ was
+    discarded. Typically $\mathcal{R}_r\sim\sigma\sqrt{D}$ while
+    $p_r\sim\mathcal{N}(0,\sigma^2)$, so the far edge is about $\sqrt{D}$ standard
+    deviations away and is crossed with probability $\sim\Phibar(\sqrt{D})$, which is
+    $8\times10^{-4}$ at $D=10$ and shrinks fast.
+  \item \textbf{The self-term was treated as common.} Putting $p_r^2$ into the shared
+    $\Theta$ rather than into receptor $r$'s own radius creates a spurious correlation
+    between a receptor and its own threshold. Its weight is the variance share of one
+    squared projection,
+    \begin{equation}
+      \frac{\Var(p_r^2)}{\Var(\Theta)}=\frac{2\sigma^4}{2D\sigma^4+\Var[\mathrm{Rad}^2]}
+      \;\le\;\frac1D ,
+    \end{equation}
+    so the per-receptor error is $O(1/D)$ and the aggregate over the array is $O(R/D)$.
+    The cross terms $p_j^2$ with $j\neq r$ are genuinely common and were handled
+    correctly.
+\end{enumerate}
+
+\paragraph{Step 10d. The exact computation, if it is ever needed.} Condition on the pair
+$(W,s)$, which is independent of $p$, and write
+$\mathcal{R}^2=\mathrm{Rad}^2(s)-W$. Then \eqref{eq:exactcond} says receptor $r$ fires if
+and only if the $R$-dimensional vector $p$ lies in the ball of radius $\mathcal{R}$
+centred at $Ue_r$, with $e_r$ the $r$-th basis vector of $\RR^R$. Hence
+\begin{equation}
+  \PP(A=a)=\EE_{W,s}\left[\gamma_R\!\left(
+    \bigcap_{r:a_r=1}B(Ue_r,\mathcal{R})\ \cap
+    \bigcap_{r:a_r=0}B(Ue_r,\mathcal{R})^c\right)\right],
+\end{equation}
+with $\gamma_R$ the $\mathcal{N}(0,\sigma^2I_R)$ measure. The problem in $D+1$ random
+dimensions has been reduced exactly to $R+2$, with all the $D$ dependence collapsed into
+the scalar $W$. For modest $R$ this is a tractable Monte Carlo and it is the right way to
+validate the closed form rather than to replace it.
+
+\section{Step 11: splitting identity from concentration}
+\label{sec:split}
+
+The project needs $I(A;\text{identity})$ and $I(A;c)$ separately, and in this model both
+are analytic.
+
+\paragraph{Step 11a. Condition on the ligand.} Fix $l$. The only remaining randomness is
+$s$, and by \eqref{eq:demand} receptor $r$ fires if and only if $K_r>Z$, where the
+matches $K_r$ are now fixed numbers and the demand $Z$ is a monotone decreasing function
+of $s$.
+
+\paragraph{Step 11b. The conditional pattern is a thermometer.} Order the receptors by
+decreasing match, equivalently by increasing distance from $l$,
+\begin{equation}
+  K_{(1)}\ge K_{(2)}\ge\dots\ge K_{(R)},
+  \qquad
+  t_k \;\equiv\; \Ebase+\Emax\big(1-K_{(k)}\big)
+\end{equation}
+so that $t_1\le t_2\le\dots\le t_R$ are the log-concentrations at which the receptors
+switch on, in order. As $s$ increases, receptors turn on nearest-first and in no other
+order, so given $l$ the pattern takes only $R+1$ values, ``the $k$ nearest are active'',
+with
+\begin{equation}
+  w_0(l)=F(t_1),
+  \qquad
+  w_k(l)=F(t_{k+1})-F(t_k),
+  \qquad
+  w_R(l)=1-F(t_R),
+  \qquad
+  F(x)=\Phi\!\left(\frac{x-m}{\sigma_c}\right).
+  \label{eq:thermo}
+\end{equation}
+
+\paragraph{Step 11c. The decomposition.} Therefore
+\begin{equation}
+  \boxed{\;H(A\mid l)=-\sum_{k=0}^{R}w_k(l)\log_2 w_k(l)\;\le\;\log_2(R+1),
+  \qquad
+  I(A;l)=H(A)-\EE_l\big[H(A\mid l)\big]. }
+  \label{eq:split}
+\end{equation}
+The identity information is the total minus a term bounded by $\log_2(R+1)$ bits.
+Combined with \eqref{eq:working}, in the near-ideal regime
+$I(A;l)=R\eta(\nu)-O(\log R)$: almost all of the array's information is about which
+ligand was presented, and the concentration channel contributes only logarithmically.
+Conditioning on $s$ instead freezes every receptive-field radius simultaneously and
+gives $I(A;s)=H(A)-\EE_s[H(A\mid s)]$, with $H(A\mid s)$ the entropy of the cells of an
+arrangement of $R$ equal-radius balls under the Gaussian ligand measure.
+
+\begin{remark}[Why this matters for the current numerics]
+Equation \eqref{eq:split} replaces, in this limit, the concentration-binning procedure
+currently used to estimate $I(A;c)$. It is therefore a target the estimator must
+reproduce, which is a far stronger test of the pipeline than internal convergence checks.
+\end{remark}
+
+\section{Step 12: releasing A6, and the transition at $\nu=1$}
+\label{sec:stagger}
+
+Assumption A6 made every receptor identical. This section releases it. The key fact,
+and the reason this section is different from what it would have been with a fixed
+baseline, is that $\Ebase$ is learnable per receptor, so \emph{threshold diversity is
+free}: it costs no displacement in latent space.
+
+\paragraph{Step 12a. The general conditional-independence formula.} Return to
+\eqref{eq:Theta} and keep $U_r$, $\Ebase^{(r)}$, $\Emax^{(r)}$ distinct. The threshold
+$\tau_r$ is then a deterministic function of the \emph{two} shared scalars
+$\big(\|l\|^2, s\big)$, and conditionally on that pair the receptors are independent
+because each depends on its own private projection. Writing
+\begin{equation}
+  q_r\big(\|l\|^2,s\big)
+   = \Phibar\!\left(\frac{1}{\sigma}\,
+     \frac{\|l\|^2-\mathrm{Rad}_r^2(s)+U_r^2}{2U_r}\right),
+\end{equation}
+the chain rule of Step~8c gives the general working formula
+\begin{equation}
+  \boxed{\;H(A)=\EE_{\|l\|^2,\,s}\!\left[\sum_{r=1}^R \htwo\big(q_r\big)\right]
+   +I\big(A;(\|l\|^2,s)\big). }
+  \label{eq:general}
+\end{equation}
+This is a two-dimensional quadrature and it contains everything in the document as
+special cases: A6 collapses the pair to the single scalar $\Theta$ and recovers
+\eqref{eq:working}.
+
+\paragraph{Step 12b. The two terms pull in opposite directions.} The first term is
+maximised by putting every $q_r$ as close to $1/2$ as possible, which means identical
+balanced receptors. The second is maximised by making the receptors respond to
+\emph{different} values of the shared variables, which means staggered thresholds.
+Which dominates is decided by $\nu$.
+
+\paragraph{Step 12c. Identical receptors in the strong-common-mode limit.} With A6 and
+$\nu\gg1$ the shared threshold swings over a range far wider than the private
+projections, so $q$ is almost always $0$ or $1$ and all receptors fire together or not
+at all. From \eqref{eq:grouping}, $K\in\{0,R\}$ with probability $1/2$ each, so $H(K)=1$
+and $\log_2\binom{R}{0}=\log_2\binom{R}{R}=0$, giving $H(A)\to1$ bit. An array of $R$
+identical receptors has degenerated into a single one.
+
+\paragraph{Step 12d. Staggered receptors in the same limit.} Now give receptor $r$ its
+own baseline. For $\nu\gg1$ neglect the private projections, so by \eqref{eq:Theta}
+\begin{equation}
+  a_r \approx \mathbf{1}\!\left[\,\mathrm{Rad}_r^2(s) > \|l\|^2+U_r^2\,\right].
+\end{equation}
+The receptors switch on in the order of their thresholds as the shared variables move:
+the array has become a \textbf{thermometer code} on the common mode, with $R+1$
+reachable patterns. Choosing the baselines so those patterns are equiprobable gives
+$H(A)\to\log_2(R+1)$ bits. Crucially, by \eqref{eq:zbar} each $\Ebase^{(r)}$ sets
+$\bar z_r$ directly, so this ladder is obtained without moving any receptor and without
+sacrificing any lever arm.
+
+\paragraph{Step 12e. The cost of staggering when $\nu$ is small.} Repeating Steps 9a to
+9c with a nonzero mean, $q_r=\Phibar(\mu_r+\nu_r z)$ with $\mu_r=\EE[\tau_r]/\sigma$,
+\begin{equation}
+  \eta_r=1-\frac{\mu_r^2+\nu_r^2}{\pi\ln2}+O(\cdot^4),
+  \label{eq:etar}
+\end{equation}
+so the first term of \eqref{eq:general} loses $0.459\,\mu_r^2$ bits per receptor while
+the second gains at most $\log_2(R+1)$ in total. For large $R$ the loss is extensive and
+the gain logarithmic, so staggering is unambiguously bad.
+
+\paragraph{Step 12f. The crossover.} The two arguments meet where the common-mode
+standard deviation equals the private-signal standard deviation, which by
+\eqref{eq:nudef} is exactly $\nu=1$:
+\begin{equation}
+  \boxed{\;\text{stagger the thresholds if and only if } \nu>1 .}
+\end{equation}
+Below the transition the optimal array is a set of identical balanced receptors at the
+common radius $U_\star$ of Section~\ref{sec:lever} with spread-out directions. Above it,
+the optimal array is a ladder of baselines tiling the range of the common mode. This is
+a genuine symmetry-breaking transition in the design, not a smooth reweighting, and it
+is the central qualitative prediction of this document.
+
+\begin{remark}[A second staggering axis, opened by a learnable $\Emax$]
+Equation~\eqref{eq:sdrad} shows that a receptor's exposure to concentration noise is
+set by its dynamic range $\Gamma_r=\Emax^{(r)}/\sigma_c$. Since $\Emax$ is learnable per
+unit, the array can also stagger \emph{in $\Gamma$}, dedicating high-$\Gamma$ receptors
+to concentration-insensitive identity reading and low-$\Gamma$ receptors to level
+reading. This is a prediction with no analogue in a fixed-kernel model and it is easy to
+test: inspect the spread of the optimised $\Emax$ values and check whether it correlates
+with the receptors' contribution to $I(A;c)$ rather than $I(A;l)$.
+\end{remark}
+
+\begin{remark}[Computing the staggered case]
+With distinct receptors the pattern probability is no longer a function of $K$, so
+\eqref{eq:grouping} does not apply and $I(A;(\|l\|^2,s))$ must be obtained either by
+enumerating the $2^R$ patterns at each quadrature node, affordable for $R\lesssim15$, or
+with the estimators already implemented in the project. Optimising only the first term
+of \eqref{eq:general} is cheap but systematically biased toward the identical design,
+since it is blind to precisely the thermometer information that staggering exists to
+capture.
+\end{remark}
+
+\section{Step 13: the other corner, $R>D$}
+\label{sec:corner}
+
+When $R$ exceeds $D$ the directions cannot be orthogonal, Lemma~\ref{lem:orth} gives
+$\Cov(p_r,p_{r'})=\sigma^2\uhat_r\cdot\uhat_{r'}\neq0$, and a second source of
+redundancy appears that has nothing to do with $\nu$. Conditional independence fails and
+the exchangeable reduction is lost. The relevant statement becomes a counting bound: at
+fixed concentration each receptive field is a ball \eqref{eq:ball}, $R$ balls in $\RR^D$
+lift to $R$ hyperplanes in $\RR^{D+1}$ through $l\mapsto(l,\|l\|^2)$, and the number of
+cells of such an arrangement grows polynomially in $R$ with exponent set by the
+dimension, so $H(A)=O(D\log_2 R)$. The three corners are therefore
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+ & $\nu\lesssim1$ & $\nu\gtrsim1$ \\
+\midrule
+$R\le D$ & $R$ bits, ideal, flat in every parameter & $\approx R/\nu$ bits, thermometer if staggered \\
+$R>D$ & \multicolumn{2}{c}{$O(D\log_2 R)$ bits, geometric saturation} \\
+\bottomrule
+\end{tabular}
+\end{center}
+A single figure in the $(R/D,\nu)$ plane with measured MI as colour and these three
+asymptotics as annotations would carry the entire analytic section of the paper.
+
+\section{Numerical recipe and validation protocol}
+\label{sec:numerics}
+
+\paragraph{The closed form, identical receptors.} Given
+$(D,\sigma,\lambda,\Emax,\sigma_c,R)$:
+\begin{enumerate}
+  \item $\rho^2=D\sigma^2/\lambda^2$, $\Gamma=\Emax/\sigma_c$,
+        $P=\rho^2/2$, $Q=De^{2\rho^2}/(4\rho^2\Gamma^2)$.
+  \item $\Lambda=W\big(P/(Qe)\big)$, $w_\star=(1+\Lambda)/2$,
+        $U_\star=\lambda\sqrt{w_\star}$, $\nu_{\min}=\rho/\sqrt{\Lambda}$.
+  \item Check self-consistency with \eqref{eq:selfcons}: if
+        $\sqrt{\Lambda D/(2\rho^4)}\lesssim2$, abandon the delta method and use the exact
+        route below.
+  \item $\Ebase$ follows from $\bar z=e^{-(\rho^2+w_\star)}$ and \eqref{eq:Zlaw}.
+  \item On Gauss--Hermite nodes $z_i$ with weights $\omega_i$, set
+        $q_i=\Phibar(\nu z_i)$, then
+        $\Pi_k=\sum_i\omega_i q_i^k(1-q_i)^{R-k}$ evaluated in log space with
+        \texttt{lgamma} for the binomials.
+  \item $\PP(K=k)=\binom{R}{k}\Pi_k$. Assert it sums to one, which is the check of
+        Step~4d.
+  \item $\mathrm{MI}=H(K)+\sum_k\PP(K=k)\log_2\binom{R}{k}$ from \eqref{eq:grouping},
+        and independently $R\eta(\nu)+I(A;\tau)$ from \eqref{eq:chain}. The two must
+        agree. Disagreement means the quadrature is too coarse in the tails, which is
+        where $q$ saturates.
+\end{enumerate}
+
+\paragraph{The exact route, without A7.} Do not expand $\ln Z$. Draw or quadrature the
+pair $(\|l\|^2,s)$, with $\|l\|^2\sim\sigma^2\chi^2_D$ and $s$ normal, and for each node
+compute the demand $Z$ from \eqref{eq:Zlaw} and set
+\begin{equation}
+  q = \begin{cases}
+    1 & Z\le0 \quad\text{(saturated on)}\\
+    \Phibar\big(\tau/\sigma\big), \ \ \tau=\dfrac{\|l\|^2+\lambda^2\ln Z+U^2}{2U}
+      & 0<Z\le1\\
+    0 & Z>1 \quad\text{(silent)} .
+  \end{cases}
+\end{equation}
+This handles the atoms of Step~1d exactly, costs one two-dimensional quadrature, and is
+the reference against which the closed form should be checked. Optimise $U$ numerically
+on this object rather than trusting \eqref{eq:numin} whenever $\rho\gtrsim1$.
+
+\paragraph{Validating against the simulator.} Run the pipeline with a single family, one
+ligand per sniff, \texttt{affinity\_kernel="gaussian"}, a deterministic readout, and
+$R\le D$. Sweep $\lambda$ so that $\nu_{\min}$ runs from about $0.3$ to about $3$, which
+by Section~\ref{sec:limits} is a sweep of a single scalar. Four predictions are tested
+at once, each failure mode diagnostic:
+\begin{itemize}
+  \item measured MI follows $R\,\eta(\nu_{\min})$, with no free parameter;
+  \item optimised receptor norms concentrate near
+        $U_\star=\lambda\sqrt{w_\star}$, which is a few times $\lambda$ and \emph{not}
+        the cloud radius $\sigma\sqrt D$;
+  \item optimised baselines satisfy $\bar z=e^{-(\rho^2+w_\star)}$;
+  \item the baselines are tight below $\nu=1$ and spread into a ladder above it.
+\end{itemize}
+Per the project's standing rule, every point must be averaged over independently drawn
+environments, never over evaluation repeats of one model, and the reported spread must
+be the spread across independent optimisations.
+
+\section{Summary of results}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+Result & Equation & Status \\
+\midrule
+Firing condition: match exceeds demand & \eqref{eq:demand} & exact, gaussian kernel \\
+Receptive field is exactly a ball & \eqref{eq:ball} & exact, gaussian kernel \\
+$\Ebase$ sets the operating point, $\Emax$ the dynamic range & \eqref{eq:Zlaw} & exact \\
+Common mode $\Theta=\|l\|^2-\mathrm{Rad}^2(s)$ & \eqref{eq:Theta} & exact \\
+Concentration spread $\equiv$ radial cloud breathing & \eqref{eq:Thetastats} & exact \\
+Array $=$ $R$ Gaussians cut by one shared threshold & \eqref{eq:tau} & exact under A5, A6 \\
+Balance: $\EE[\mathrm{Rad}^2]=D\sigma^2+U^2$ & \eqref{eq:balance} & exact, any kernel \\
+Operating point $\bar z=e^{-(\rho^2+w)}$ & \eqref{eq:zbar} & delta method \\
+Concentration noise $\propto e^{\rho^2+w}$ & \eqref{eq:sdrad} & delta method \\
+Control parameter $\nu(w)$ & \eqref{eq:nugauss} & delta method \\
+Quadratic kernel has no optimal $U$ & \eqref{eq:nuquad} & exact in that limit \\
+Optimal lever arm, Lambert $W$ & \eqref{eq:numin} & delta method \\
+$U_\star\simeq\lambda\sqrt{\ln\Gamma}$, $\nu_{\min}\simeq\rho/\sqrt{2\ln\Gamma}$ & \eqref{eq:scaling} & asymptotic \\
+Self-consistency $\Gamma\bar z|_\star=\sqrt{\Lambda D/2\rho^4}$ & \eqref{eq:selfcons} & exact given A7 \\
+$\mathrm{MI}=H(K)+\EE[\log_2\binom{R}{K}]$ & \eqref{eq:grouping} & exact under A4 \\
+$\eta(\nu)=1-0.459\nu^2$ & \eqref{eq:smallnu} & small $\nu$ \\
+$\eta(1)=1/(2\ln2)=0.7213$ & \eqref{eq:nu1} & exact \\
+$\eta(\nu)\approx1.040/\nu$ & \eqref{eq:largenu} & large $\nu$ \\
+Error of A4 & $O(1/D)$ per receptor & bounded \\
+$H(A\mid l)\le\log_2(R+1)$, thermometer & \eqref{eq:split} & exact \\
+Stagger if and only if $\nu>1$ & Step~12f & asymptotic argument \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{Open items, in the order they should be attacked.}
+\begin{enumerate}
+  \item Implement $\eta(\nu)$ and the exact MI, verify the three limits and the exact
+    point $\eta(1)=1/(2\ln2)$.
+  \item Implement the exact route of Section~\ref{sec:numerics} and compare with the
+    Lambert-$W$ optimum over a grid in $\rho$, to map where A7 is trustworthy.
+  \item Validate against the simulator along the $\lambda$ sweep, checking the four
+    predictions listed above.
+  \item Optimise \eqref{eq:general} over baselines and norms, and locate the staggering
+    transition numerically.
+  \item Only then, the correlated-direction case $R>D$, and the heteromer questions of
+    Appendix~\ref{app:hetero}.
+\end{enumerate}
+
+\appendix
+
+\section{Heteromers}
+\label{app:hetero}
+
+Nothing in the main text depends on this appendix. It is recorded here because the
+results are short, exact, and decide what the heteromer comparison is allowed to claim.
+Throughout, a heteromer is assembled from $\ksub$ subunits with latent coordinates
+$v_1,\dots,v_{\ksub}$, baselines $\Ebase^{(u)}$ and ceilings $\Emax^{(u)}$, and its
+half-activation energy is the arithmetic mean of the subunit energies.
+
+\subsection{The match of a heteromer is the weighted mean of its subunit matches}
+
+Average the gaussian kernel \eqref{eq:kernel} over the subunits and collect terms:
+\begin{align}
+  \ln EC_{50}^{(\mathrm{het},l)}
+   &= \frac{1}{\ksub}\sum_{u}\left[\Ebase^{(u)}
+      +\Emax^{(u)}\Big(1-e^{-\|l-v_u\|^2/\lambda^2}\Big)\right] \notag\\
+   &= \bar{E}_{\mathrm{base}} + \bar{E}_{\mathrm{max}}
+      - \frac{1}{\ksub}\sum_u \Emax^{(u)} e^{-\|l-v_u\|^2/\lambda^2},
+\end{align}
+with $\bar{E}_{\mathrm{base}}$ and $\bar{E}_{\mathrm{max}}$ the subunit means. Defining
+the \textbf{pooled match}
+\begin{equation}
+  K_{\mathrm{het}} \;\equiv\;
+   \frac{1}{\ksub\,\bar{E}_{\mathrm{max}}}\sum_u \Emax^{(u)}\,
+   e^{-\|l-v_u\|^2/\lambda^2}
+   \;\in\;(0,1],
+\end{equation}
+the whole expression takes the homomer form,
+$\ln EC_{50}^{(\mathrm{het})}=\bar{E}_{\mathrm{base}}
+ +\bar{E}_{\mathrm{max}}(1-K_{\mathrm{het}})$, so by Step~1b
+\begin{equation}
+  \boxed{\;a_{\mathrm{het}}=\mathbf{1}\big[K_{\mathrm{het}}>Z_{\mathrm{het}}\big],
+  \qquad
+  Z_{\mathrm{het}}=\frac{\bar{E}_{\mathrm{base}}+\bar{E}_{\mathrm{max}}-s}
+                        {\bar{E}_{\mathrm{max}}} . }
+\end{equation}
+The match-versus-demand picture therefore survives heteromerisation intact. The only
+change, and it is the important one, is that the match is now a weighted sum of
+$\ksub$ Gaussian bumps instead of one.
+
+\subsection{Consequence: the field is not a ball}
+
+Because a sum of Gaussians is not a Gaussian, the firing set
+$\{l : K_{\mathrm{het}}(l)>Z\}$ is a superlevel set of a Gaussian mixture, not a ball.
+A single perfectly matched subunit contributes only $\Emax^{(u)}/(\ksub\bar{E}_{\max})
+\approx 1/\ksub$ to the pooled match, so the logic of the receptor depends on where its
+demand sits:
+\begin{itemize}
+  \item $\bar z\lesssim1/\ksub$: one well-matched subunit is enough, the heteromer acts
+    as a soft OR over its subunits and its field is a union of blobs;
+  \item $\bar z\gtrsim1/\ksub$: several subunits must engage at once, the heteromer acts
+    as a soft AND and its field is concentrated where the bumps overlap.
+\end{itemize}
+With the balanced operating point $\bar z=e^{-(\rho^2+w)}$ of \eqref{eq:zbar} and the
+worked numbers of Step~7e, $\bar z\approx0.34$ against $1/\ksub=0.2$, so the model sits
+on the AND side but not far from the boundary. \textbf{This is the only mechanism by
+which a heteromer can do something no homomer can do at fixed receptor count}, and
+A.4 below shows that it is the only one that survives scrutiny.
+
+\subsection{The harmonic limit collapses the field back to a ball}
+
+Expand $e^{-d^2/\lambda^2}\simeq1-d^2/\lambda^2$ with common $\Emax$, and apply the
+parallel-axis identity with $\bar v=\frac{1}{\ksub}\sum_u v_u$ and
+$S^2=\frac{1}{\ksub}\sum_u\|v_u-\bar v\|^2$:
+\begin{equation}
+  \frac{1}{\ksub}\sum_u\|l-v_u\|^2=\|l-\bar v\|^2+S^2 ,
+\end{equation}
+which follows by writing $l-v_u=(l-\bar v)-(v_u-\bar v)$, squaring, and noting that the
+cross term vanishes because $\sum_u(v_u-\bar v)=0$. Hence
+\begin{equation}
+  \boxed{\;\ln EC_{50}^{(\mathrm{het},l)}
+   = \bar{E}_{\mathrm{base}} + k\big(\|l-\bar v\|^2+S^2\big),
+   \qquad k=\frac{\Emax}{\lambda^2}. }
+  \label{eq:hetharm}
+\end{equation}
+\textbf{In the harmonic limit a heteromer is exactly a homomer placed at the centroid of
+its subunits, with its baseline raised by the subunit dispersion.} Heteromerisation is
+then not a richer functional form at all, only a reparametrisation.
+
+\subsection{The centroid theorem, and why it forbids a fixed-$R$ advantage}
+
+Give each gene the pair $P_u=(v_u,\,B_u)$ with
+$B_u\equiv k\|v_u\|^2+\Ebase^{(u)}$ its offset in the sense of \eqref{eq:Theta}. The
+offset of a heteromer follows from \eqref{eq:hetharm} and the parallel-axis identity
+once more:
+\begin{equation}
+  B_{\mathrm{het}} = k\big(\|\bar v\|^2+S^2\big)+\bar{E}_{\mathrm{base}}
+   = \frac{1}{\ksub}\sum_u\Big[k\|v_u\|^2+\Ebase^{(u)}\Big]
+   = \frac{1}{\ksub}\sum_u B_u ,
+\end{equation}
+and of course $v_{\mathrm{het}}=\bar v$. Therefore
+\begin{equation}
+  \boxed{\;\big(v,B\big)_{\mathrm{het}}
+   = \text{centroid of } \big\{(v,B)_u : u \in \text{subunits}\big\}. }
+\end{equation}
+This statement is true \emph{only because $\Ebase$ is learnable}: it is what makes $B_u$
+a free coordinate rather than a function of $v_u$. Two corollaries follow.
+
+\paragraph{Containment.} A homomer of gene $u$ realises an arbitrary point
+$(v_u,B_u)\in\RR^{D+1}$, since position and baseline are independently learnable. A
+heteromer realises a centroid of such points, which is also a point of $\RR^{D+1}$ and
+nothing more. Hence the set of $R$-tuples achievable by an array of $R$ homomers
+\emph{contains} the set achievable by an array of $R$ heteromers, and
+\begin{equation}
+  \boxed{\;\mathrm{MI}^{*}_{\mathrm{homomer}}(R)\;\ge\;\mathrm{MI}^{*}_{\mathrm{heteromer}}(R)
+  \qquad\text{exactly, in the harmonic limit.}}
+\end{equation}
+\textbf{Comparing the two architectures at fixed receptor count is therefore
+meaningless: homomers win by construction.} Any heteromer advantage must come from
+either a fixed \emph{gene} budget, or the non-ball fields of A.2.
+
+\paragraph{The honest comparison.} With $n$ genes a homomer array has $n$ receptors,
+while heteromers give $\binom{n+\ksub-1}{\ksub}$ of them. For the octopus $n=26$ and
+$\ksub=5$, so the heteromer repertoire is of order $10^5$ against $26$. The question the
+paper can legitimately ask is whether a large, contracted, correlated set beats a small,
+free one, and the answer will be governed by whether the array is limited by receptor
+count, in which case heteromers win, or by the common mode and the geometry of
+Section~\ref{sec:corner}, in which case they do not.
+
+\subsection{The lever-arm penalty at fixed gene positions}
+
+With free baselines, balance fixes $B$ and leaves the lever arm as the only difference
+between architectures. By the triangle inequality $\|\bar v\|\le\frac{1}{\ksub}\sum_u\|v_u\|$,
+with equality only if all subunits are parallel, and for subunits of common norm $G$ in
+random directions $\|\bar v\|\approx G/\sqrt{\ksub}$. Since
+$\nu\propto1/U$ by \eqref{eq:nudef},
+\begin{equation}
+  \frac{\nu_{\mathrm{het}}}{\nu_{\mathrm{hom}}}\;\approx\;\sqrt{\ksub}\;\approx\;2.2
+  \qquad(\ksub=5).
+\end{equation}
+There is also a design conflict worth stating: by Section~\ref{sec:lever} the optimal
+lever arm is $U_\star$, but one gene cloud cannot give $U_\star$ to both its homomers and
+its heteromers, since the latter sit a factor $\sqrt{\ksub}$ closer in. A gene cloud
+optimised for its heteromers places its homomers too far out, and conversely. Quantifying
+that compromise, which requires the joint distribution of $(\bar v,S^2)$ over subunit
+multisets, is the natural next calculation and is not attempted here.
+
+
+\end{document}
