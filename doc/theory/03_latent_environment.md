@@ -37,6 +37,12 @@ The previous model used a pure quadratic $E_o = E_{\text{base}} + \|\mathbf{v}_u
 3. **Clean parameter meanings:** $E_{\text{base}}$ is unambiguously the EC50 at the optimal ligand; $E_{\text{max}}$ is unambiguously the selectivity ceiling. They enter additively and have distinct physical meanings, avoiding the sloppy-mode degeneracy identified in the JPCB 2017 MWC paper (supplementary, p. S25).
 4. **$\lambda$ decouples breadth from peak depth:** $\lambda$ appears only in the exponent alongside the distance, never multiplying or adding to $E_{\text{base}}$. This is consistent with the Cleland et al. 2021 (odorsampling) convention where the analogous $\sigma$ parameter is normalized out.
 
+**Shared-energy mode.** $E_{\text{base}}^{(u)}$ and $E_{\text{max}}^{(u)}$ are learned
+per unit by default. Setting `RunConfig.shared_unit_energies` replaces each by one
+learnable scalar common to all units, so only the latent coordinates stay per unit. This
+is the parameterisation the closed-form analysis in `analytics/homomer_array_mi.tex`
+assumes, and runs intended for comparison with it must set the flag. See §07.
+
 **Parameter initialization:**
 
 * $E_{\text{base}}^{(u)}$ is initialized to $\mathbb{E}[\ln c]$, the expected log-concentration averaged over all ligands. This ensures that each receptor's EC50 matches the expected ligand concentration at the start of optimization.
@@ -66,10 +72,10 @@ Every time a batch of sensory events is sampled, the environment dynamically gen
 
 The instantaneous interaction energies $E_o^{(u,\ell)}$ are then computed using these noisy observed coordinates for all ligands currently present in the mixture.
 
-The implementation stores selected ligands in a padded sparse table. Its usual width
-`s_upper` is a tail-based allocation heuristic, not a limit on the sampled mixture.
-If any sniff exceeds it, the table widens for that batch to retain every selected
-ligand. Presence labels and concentrations used by receptor physics therefore describe
+The implementation stores selected ligands in a padded sparse table. Its width
+`s_upper` is a high-water mark, not a limit on the sampled mixture: it starts at 1 and
+whenever a sniff exceeds it the table widens and keeps the larger width, so it converges
+to the tightest width that never discards a selected ligand. Presence labels and concentrations used by receptor physics therefore describe
 the same mixture, including rare large draws.
 
 ### 3.3 Concentration Models

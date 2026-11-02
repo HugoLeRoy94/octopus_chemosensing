@@ -1,0 +1,24 @@
+-> Streamline the vocabulary : 1 word per technical concept, e.g.: receptive space / chemical environment
+-> Highlight the difference between receptor diversity, and sensitive diversity. It is important to explain cleanly that unlike genes expansion, the number diversity of receptors in the case of heteromers does not translate directly into a sensitive diversity.
+-> More binding doesn't necessarily means more information. Reciprocally, less binding can mean more information.
+-> Binding more to a subset of used ligands, doesn't mean that the binding is generally better.
+-> I think that it would be worth to explain that the bio-chemico-physical properties of heteromers are some sort of average of its constitutive, without going into too much theoretical details..
+-> It might be worth including a couple of sentence about how olfactive coding works ? I think that would help the discussion.
+-> I agree with Agnese, the idea that this architecture is specially well suited for decentralized nervous system is unclear to me. If there is an argument for it, it should be stated more plainly. To be honest, the follow-up work that we are currently performing could provide argument toward this idea, but that wouldn't be a small addition to the current paper.
+
+
+    |-> one argument could be that the classical 1 receptor type per neuron means the wiring would be complicated in the case of a decentralized nervous system.
+
+If we want to stick to this idea that heteromerization is well suited for decentralized nervous systems, I would use the following argument.
+- The way olfaction works in vertebrate is that an array of broadly tuned receptors provide a complex codewords for a wide diversity of chemicals.
+- This requires a complex wiring, and decoding that only a complex brain can achieve.
+- If we consider that most of the information is processed locally in the case of invertebrate, that puts a constraints on the complexity of the codeword.
+- 
+
+With gene expansion, every new gene is an independently tuned receptor. Heteromers share subunits, so their chemistry is correlated by construction and the complex count overestimates the number of distinguishable signals.
+
+Several passages assume the reader knows that stimulus identity lives in the pattern across receptors, not in any one of them.
+
+More binding is not more information. Stronger and broader responses are treated as better. A receptor that responds to everything is uninformative, and weaker binding can help if it decorrelates a receptor from the rest.
+
+I agree with Agnese, the idea that this architecture is specially well suited for decentralized nervous system is unclear to me. One argument I see, is that subunit composition changes the pore and so the transmitted signal (Fig. 5F-H), not just which ligands are detected, so heteromerization diversifies output as well as input. That matters more when processing is peripheral. I can think also of stronger arguments, but they would require to introduce more of the theoretical model.

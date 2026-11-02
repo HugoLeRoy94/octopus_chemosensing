@@ -87,8 +87,9 @@ The simulation code is written in PyTorch and runs on NVIDIA A100 GPUs. The memo
 
 **Sparse ligand axis:** in current batch sampling, the physics ligand axis has width
 `S_batch = max(s_upper, largest realized mixture size in the batch)`, at most L.
-`s_upper` is the usual allocation width, not a hard support bound. Rare larger batches
-use more memory instead of silently discarding ligands. When `s_upper < L`, determining
+`s_upper` is a high-water mark (initialised to 1, raised on overflow and never lowered),
+not a hard support bound. Larger batches raise it instead of silently discarding ligands,
+so it converges to the largest mixture realized so far. When `s_upper < L`, determining
 the width costs one scalar GPU→CPU synchronization. Memory estimates using full L
 remain conservative; estimates using only `s_upper` must allow for these overflow batches.
 

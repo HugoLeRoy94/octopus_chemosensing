@@ -23,6 +23,7 @@
 \newcommand{\Ebase}{E_{\mathrm{base}}}
 \newcommand{\Emax}{E_{\mathrm{max}}}
 \newcommand{\uhat}{\hat{u}}
+\newcommand{\nueff}{\nu_{\mathrm{eff}}}
 
 \title{Mutual information of a homomer receptor array \\ in a single-family chemical environment}
 \author{Analytical baseline for the octopus chemosensation project}
@@ -73,13 +74,16 @@ different character: a term $\|l\|^2$ that is \emph{the same for every receptor}
 term $u_r\cdot l$ that is \emph{linear in the ligand coordinate and specific to each
 receptor}. The concentration joins the first group, because one ligand at one
 concentration presents the same concentration to every receptor. The whole array is
-therefore driven by a single scalar common mode plus $R$ Gaussian projections, and
-projections of an isotropic Gaussian onto orthogonal directions are independent, so the
-array reduces to \emph{$R$ independent Gaussian variables cut by one common random
-threshold}. Conditionally on that threshold the receptors are independent and
-identically distributed Bernoulli variables, the joint response is exchangeable, and its
-entropy follows from a two-line identity. Everything then depends on the environment
-through a single ratio.
+therefore driven by a single scalar common mode plus $R$ Gaussian projections. Because the
+receptors share that common mode, their outputs are correlated however the directions are
+chosen, and the only lever against it is the pairwise cosine, which enters their
+covariance with the opposite sign. The array should therefore oppose the directions, up to
+the geometric limit $-1/(R-1)$, a regular simplex while $R\le D+1$. For any such
+equiangular design the covariance has one-factor form, so
+conditioning on the single residual factor makes the receptors independent and identically
+distributed Bernoulli variables, the joint response is exchangeable, and its entropy
+follows from a two-line identity. Everything then depends on the environment and the design
+through a single ratio of that covariance to the rest of the variance.
 
 \paragraph{The logic, step by step.}
 \begin{enumerate}
@@ -89,14 +93,16 @@ through a single ratio.
         concentration (Section~\ref{sec:step1}).
   \item \textbf{Separation.} Expand the square and split the condition into a shared
         scalar and a private linear projection (Section~\ref{sec:step2}).
-  \item \textbf{Symmetry.} Isotropy forces equal receptor norms at a balanced optimum,
-        and orthogonal directions make the projections independent
+  \item \textbf{Equal norms, one shared threshold.} Balance and shared energies force
+        equal norms, so every receptor compares its private projection with one
+        threshold. Two numbers remain, $\nu$ for the norm and $\kappa$ for the angles
         (Section~\ref{sec:step3}).
-  \item \textbf{Conditional independence.} Condition on the shared threshold. The
-        receptors become independent coins with a common bias $q$
+  \item \textbf{From the threshold to the pattern.} At a fixed value of a single shared
+        variable the receptors are independent coins with a common bias. The law of the
+        pattern depends only on $\nueff$, and the MI decreases with it
         (Section~\ref{sec:step4}).
   \item \textbf{Statistics of the common mode, kernel-free.} Mean, variance, balance
-        condition, and the definition of the control parameter $\nu$, all written for an
+        condition, $\nu$, and the optimal cosine $\kappa_\star$, all written for an
         arbitrary kernel (Section~\ref{sec:step5}).
   \item \textbf{Specialisation to the gaussian kernel.} Evaluate the common mode
         explicitly, identify the three learnable knobs and what each controls, and
@@ -115,8 +121,8 @@ through a single ratio.
   \item \textbf{Decomposition.} Split the MI into identity and concentration parts
         analytically (Section~\ref{sec:split}).
   \item \textbf{Symmetry breaking.} Release the equal-norm assumption and show a
-        staggered array beats a balanced one precisely when $\nu > 1$
-        (Section~\ref{sec:stagger}).
+        staggered array beats a balanced one precisely when $\nu_{\mathrm{eff}} > 1$,
+        an $R$-dependent threshold on $\nu$ (Section~\ref{sec:stagger}).
   \item \textbf{The other corner.} What changes when $R > D$
         (Section~\ref{sec:corner}).
 \end{enumerate}
@@ -156,18 +162,22 @@ $m$, $\sigma_c$ & mean and standard deviation of $s$ & parameters \\
 $\lambda$ & affinity length scale of the gaussian kernel & parameter (fixed) \\
 $u_r \in \RR^D$ & latent coordinate of receptor $r$ & learnable \\
 $U_r = \|u_r\|$, $\uhat_r = u_r/U_r$ & norm and direction of receptor $r$ & learnable \\
-$\Ebase^{(r)}$ & baseline energy, i.e.\ $\ln EC_{50}$ at a perfect match & learnable \\
-$\Emax^{(r)}$ & selectivity ceiling, extra energy at zero match & learnable, $>0$ \\
+$\Ebase$ & baseline energy, i.e.\ $\ln EC_{50}$ at a perfect match & learnable, shared \\
+$\Emax$ & selectivity ceiling, extra energy at zero match & learnable, shared, $>0$ \\
 $d_r = \|l - u_r\|$ & latent distance from ligand to receptor $r$ & random \\
 $K_r = e^{-d_r^2/\lambda^2} \in (0,1]$ & \textbf{match} of the ligand to receptor $r$ & random \\
 $Z_r$ & \textbf{demand}, Eq.~\eqref{eq:demand} & random \\
-$\bar{z}_r$ & mean demand, the operating point of receptor $r$ & derived \\
-$\Gamma_r = \Emax^{(r)}/\sigma_c$ & \textbf{dynamic range} of receptor $r$ & derived \\
+$\bar{z}$ & mean demand, the operating point of the array & derived \\
+$\Gamma = \Emax/\sigma_c$ & \textbf{dynamic range} of the array & derived \\
 $a_r \in \{0,1\}$, $A$, $K$ & activity, array pattern, number active & random \\
 $p_r = \uhat_r\cdot l$ & private projection of the ligand on receptor $r$ & random \\
 $\Theta$ & common mode, Eq.~\eqref{eq:Theta} & random \\
 $\tau$ & shared threshold on the private projections & random \\
-$q$ & firing probability conditional on $\tau$ & random \\
+$x_r=(p_r-\tau)/\sigma$ & firing variable, $a_r=\mathbf 1[x_r>0]$ & random \\
+$\kappa = \uhat_r\cdot\uhat_{r'}$ & pairwise cosine, the same for every pair under A5 & learnable \\
+$z$, $\varepsilon_r$ & shared and private factors of \eqref{eq:onefactor} & random \\
+$q$ & firing probability conditional on $z$ & random \\
+$\nueff$ & effective control parameter, Eq.~\eqref{eq:nueff} & derived \\
 $\nu$ & control parameter, Eq.~\eqref{eq:nudef} & derived \\
 $\rho = \sigma\sqrt{D}/\lambda$ & cloud width over kernel range & derived \\
 $w = U^2/\lambda^2$ & squared lever arm in kernel units & derived \\
@@ -195,14 +205,15 @@ drawn independently,
   \label{eq:conclaw}
 \end{equation}
 
-\paragraph{Receptors and the gaussian kernel.} Receptor $r$ is specified by three
-learnable objects: a position $u_r \in \RR^D$, a baseline energy $\Ebase^{(r)} \in \RR$,
-and a selectivity ceiling $\Emax^{(r)} > 0$. Its half-activation concentration follows
+\paragraph{Receptors and the gaussian kernel.} Receptor $r$ carries a position
+$u_r \in \RR^D$, a baseline energy $\Ebase^{(r)} \in \RR$, and a selectivity ceiling
+$\Emax > 0$, all learnable. The next paragraph fixes a redundancy among them, once
+and for all. Its half-activation concentration follows
 the \textbf{gaussian affinity kernel}, which is the
 \texttt{affinity\_kernel="gaussian"} branch of the simulator,
 \begin{equation}
   \boxed{\;\ln EC_{50}^{(r,l)}
-   = \Ebase^{(r)} + \Emax^{(r)}\left(1 - e^{-\|l-u_r\|^2/\lambda^2}\right). }
+   = \Ebase^{(r)} + \Emax\left(1 - e^{-\|l-u_r\|^2/\lambda^2}\right). }
   \label{eq:kernel}
 \end{equation}
 It is called saturating because as the distance grows the energy tends to the finite
@@ -239,12 +250,12 @@ and is \emph{not} assumed anywhere before that.
     extra term $\EE[\sum_r \htwo(a_r)]$ must be subtracted.
   \item[A4 (independence of the common mode).] In Sections~\ref{sec:step4}
     to~\ref{sec:limits} the shared threshold is treated as independent of the private
-    projections. This is the only genuine approximation in the main derivation. Its error
-    is $O(1/D)$ per receptor and it is quantified, and removed, in
+    projections. Its error is $O(1/D)$ per receptor and it is quantified, and removed, in
     Section~\ref{sec:exact}.
-  \item[A5 (orthogonal directions).] Sections~\ref{sec:step3} onward assume $R\le D$ and
-    mutually orthogonal receptor directions. The opposite corner is
-    Section~\ref{sec:corner}.
+  \item[A5 (equiangular directions).] Sections~\ref{sec:step3} onward assume the receptor
+    directions are equiangular, sharing one pairwise cosine $\kappa$, and at the optimum
+    $\kappa_\star=-\min(\nu^2,1/(R-1))$ of Section~\ref{sec:step5}. All pairs can share one
+    cosine only while $R\le D+1$; the crowded corner is Section~\ref{sec:corner}.
   \item[A6 (identical, balanced receptors).] Sections~\ref{sec:step3}
     to~\ref{sec:split} assume all receptors share the same $U$, $\Ebase$ and $\Emax$, and
     sit at the balanced operating point. This is justified by isotropy in
@@ -253,6 +264,11 @@ and is \emph{not} assumed anywhere before that.
     $\ln Z$ around its mean. Its validity condition is stated explicitly there, and
     Section~\ref{sec:lever} shows the optimum sits at the edge of that condition, so the
     resulting optimum is correct in scaling but not in constant.
+  \item[A8 (Gaussian threshold).] From Step~4b onward the threshold $\tau$ is treated as
+    Gaussian. It is not: $\|l\|^2$ is a scaled chi-square of skewness $\sqrt{8/D}$, and
+    $\mathrm{Rad}^2(s)$ is a nonlinear function of $s$ with saturation atoms. A8 holds
+    for large $D$ together with A7. Step~4d states where it is used and what survives
+    without it.
 \end{description}
 
 \section{Step 1: match versus demand, and the exact ball}
@@ -267,7 +283,7 @@ which we call the \textbf{match} between the ligand and receptor $r$. It equals 
 a perfectly docked ligand and tends to $0$ for a chemically remote one. In terms of it,
 \eqref{eq:kernel} reads
 \begin{equation}
-  \ln EC_{50}^{(r,l)} = \Ebase^{(r)} + \Emax^{(r)}\,(1 - K_r),
+  \ln EC_{50}^{(r,l)} = \Ebase + \Emax\,(1 - K_r),
 \end{equation}
 so the half-activation energy slides linearly between $\Ebase$ at perfect match and
 $\Ebase + \Emax$ at zero match.
@@ -287,8 +303,8 @@ $\Ebase + \Emax$ at zero match.
 \end{align}
 Define the \textbf{demand}
 \begin{equation}
-  \boxed{\;Z_r \;\equiv\; \frac{\Ebase^{(r)} + \Emax^{(r)} - s}{\Emax^{(r)}}
-         \;=\; 1 - \frac{s - \Ebase^{(r)}}{\Emax^{(r)}},
+  \boxed{\;Z_r \;\equiv\; \frac{\Ebase + \Emax - s}{\Emax}
+         \;=\; 1 - \frac{s - \Ebase}{\Emax},
   \qquad\text{so that}\qquad
   a_r = \mathbf{1}\!\left[\,K_r > Z_r\,\right]. }
   \label{eq:demand}
@@ -299,13 +315,38 @@ has been made, and it is the cleanest statement of what the gaussian kernel does
 \paragraph{Step 1c. The demand is Gaussian, and dimensionless.} Since $Z_r$ is an affine
 function of $s$ and $s$ is Gaussian by \eqref{eq:conclaw},
 \begin{equation}
-  Z_r \sim \mathcal{N}\!\left(\bar z_r,\ \frac{1}{\Gamma_r^{2}}\right),
+  Z_r \sim \mathcal{N}\!\left(\bar z,\ \frac{1}{\Gamma^{2}}\right),
   \qquad
-  \bar z_r = 1 - \frac{m - \Ebase^{(r)}}{\Emax^{(r)}},
+  \bar z = 1 - \frac{m - \Ebase}{\Emax},
   \qquad
-  \Gamma_r = \frac{\Emax^{(r)}}{\sigma_c}.
+  \Gamma = \frac{\Emax}{\sigma_c}.
   \label{eq:Zlaw}
 \end{equation}
+\paragraph{The baseline redundancy, and the convention used throughout.} The three
+objects are not independent as far as the \emph{marginal} firing rate is concerned. A
+receptor fires when its match exceeds a demand, so the balance condition $\PP(a_r=1)=1/2$
+is a single equation in the pair $(U_r,\Ebase^{(r)})$: moving a receptor outward and
+lowering its baseline leaves the marginal unchanged. Allowing both to vary per receptor
+therefore leaves the balance condition unable to pin either, and the model acquires a
+direction along which nothing observable changes.
+
+They are not interchangeable beyond the marginal, which is the point. The norm $U_r$ has a
+second role that the baseline does not: it sets the lever arm $1/(2U_r)$ with which the
+common mode acts on that receptor (Step~2c). The ceiling $\Emax$ has a third, it
+sets the dynamic range $\Gamma=\Emax/\sigma_c$ (Section~\ref{sec:lever}). Only the
+baseline moves the threshold and nothing else.
+
+\textbf{Throughout the main text the array shares one pair $(\Ebase,\Emax)$}, which is the
+simulator's \texttt{shared\_unit\_energies} setting, leaving the position $u_r$ as the only
+per-receptor freedom. Two consequences are used later and are stated here so that they are
+never re-derived. Balance then has one solution in $U$, common to every receptor
+(Section~\ref{sec:step3}). And a ladder of thresholds cannot be bought for free: it must be
+bought radially, by spreading the norms, and it therefore costs lever arm
+(Section~\ref{sec:stagger}). That is what makes the measured dispersion of the norms a
+measurement rather than an artefact of the parametrisation. Appendix~\ref{app:hetero}
+relaxes the convention to per-\emph{gene} energies, where distinct genes are distinct
+molecules and the freedom is physical; the switch is flagged there.
+
 Two learnable quantities have acquired a clean meaning, and they do different jobs:
 \begin{itemize}
   \item $\Ebase$ sets $\bar z$, the \textbf{operating point}: how demanding the receptor
@@ -324,9 +365,9 @@ occur with nonzero probability:
 \toprule
 Demand & Outcome & Probability \\
 \midrule
-$Z_r \le 0$ & fires whatever the ligand, carries nothing & $\Phi(-\bar z_r \Gamma_r)$ \\
+$Z_r \le 0$ & fires whatever the ligand, carries nothing & $\Phi(-\bar z \Gamma)$ \\
 $0 < Z_r \le 1$ & fires if and only if $l$ lies in a ball, Step~1e & $1$ minus the others \\
-$Z_r > 1$ & never fires, carries nothing & $\Phibar\big((1-\bar z_r)\Gamma_r\big)$ \\
+$Z_r > 1$ & never fires, carries nothing & $\Phibar\big((1-\bar z)\Gamma\big)$ \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -397,9 +438,11 @@ direction. Dividing by the positive number $2U_r$, which preserves the inequalit
   \label{eq:Theta}
 \end{equation}
 
-\paragraph{Step 2d. Why $\Theta$ is called the common mode.} Under A6 all receptors share
-$\Ebase$ and $\Emax$, so $\mathrm{Rad}_r^2 = \mathrm{Rad}^2$ and $\Theta_r = \Theta$
-carries no index. It is one scalar random variable that the whole array is compared
+\paragraph{Step 2d. Why $\Theta$ is called the common mode.} By the convention of
+Section~\ref{sec:model} the array shares one $(\Ebase,\Emax)$, so
+$\mathrm{Rad}_r^2=\mathrm{Rad}^2$ and $\Theta_r=\Theta$ carries no index. This is the
+only place the convention is used, and it holds for the rest of the document including
+Section~\ref{sec:stagger}, where A6 is released but the sharing is not. It is one scalar random variable that the whole array is compared
 against, and it contains two contributions that enter identically:
 \begin{itemize}
   \item $\|l\|^2$, how far the presented ligand sits from its family centre, a purely
@@ -429,121 +472,192 @@ A distant receptor is \emph{less} sensitive to the common mode, which is good, a
 is about this trade-off, and Section~\ref{sec:stagger} uses it again.
 \end{remark}
 
-\section{Step 3: what isotropy forces on the design}
+\section{Step 3: equal norms, one shared threshold, two numbers}
 \label{sec:step3}
+
+This section reduces the array to two numbers, one set by the norms and one by the angles.
+
+\paragraph{Step 3a. The norms are forced.}
 
 \begin{lemma}[The marginal firing rate depends on a receptor only through its norm]
 \label{lem:norm}
-Under \eqref{eq:ligandlaw} and \eqref{eq:conclaw}, and at fixed $\Ebase$ and $\Emax$,
-the probability $\PP(a_r=1)$ is a function of $U_r=\|u_r\|$ alone and is strictly
-decreasing in it.
+Under \eqref{eq:ligandlaw} and \eqref{eq:conclaw}, the probability $\PP(a_r=1)$ is a
+function of $U_r=\|u_r\|$ alone and is strictly decreasing in it.
 \end{lemma}
 
 \begin{proof}
 By \eqref{eq:ball}, $a_r = \mathbf{1}[\|l-u_r\|^2 < \mathrm{Rad}^2(s)]$ with
-$\mathrm{Rad}^2$ a function of $s$ only, and $s \perp l$. Since
-$l \sim \mathcal{N}(0,\sigma^2 I_D)$, the vector $(l-u_r)/\sigma$ is normal with mean
-$-u_r/\sigma$, so
-\begin{equation}
-  \frac{\|l-u_r\|^2}{\sigma^2}\sim\chi'^2_D\!\left(\frac{\|u_r\|^2}{\sigma^2}\right),
-\end{equation}
-a noncentral chi-square with $D$ degrees of freedom and noncentrality
-$\|u_r\|^2/\sigma^2$. Its law depends on $u_r$ only through $\|u_r\|$, giving the first
-claim. A noncentral chi-square is stochastically increasing in its noncentrality, so
-$\|l-u_r\|^2$ stochastically increases with $U_r$ and the probability that it falls below
-an independent threshold strictly decreases.
+$\mathrm{Rad}^2$ a function of $s$ only, and $s \perp l$. The variable
+$\|l-u_r\|^2/\sigma^2$ is a noncentral chi-square with $D$ degrees of freedom and
+noncentrality $U_r^2/\sigma^2$. Its law depends on $u_r$ only through $U_r$ and is
+stochastically increasing in it, so the probability that it falls below an independent
+threshold strictly decreases.
 \end{proof}
 
-\begin{remark}[Why this forces equal norms, given equal $\Ebase$ and $\Emax$]
-A binary variable has maximal entropy at marginal $1/2$. By Lemma~\ref{lem:norm}, at
-fixed $\Ebase$ and $\Emax$ the equation $\PP(a_r=1)=1/2$ has exactly one solution in
-$U_r$, the same for every receptor, so all receptors sit on one sphere and only their
-directions are free. That is assumption A6. Note the caveat that matters later: once
-$\Ebase$ is allowed to differ between receptors, balance can be achieved at \emph{any}
-norm by compensating with the baseline, and the argument for equal norms collapses. That
-is the subject of Sections~\ref{sec:lever} and \ref{sec:stagger}.
-\end{remark}
+A binary variable has maximal entropy at marginal $1/2$. By Lemma~\ref{lem:norm} the
+equation $\PP(a_r=1)=1/2$ has exactly one solution in $U_r$, and since the energies are
+shared it is the same solution for every receptor. All receptors therefore sit on one
+sphere of radius $U$, which is assumption A6, released in Section~\ref{sec:stagger}.
 
-\begin{lemma}[Orthogonal directions give independent private projections]
-\label{lem:orth}
-If $\uhat_1,\dots,\uhat_R$ are orthonormal and $R\le D$ then $p_1,\dots,p_R$ are
-independent with $p_r\sim\mathcal{N}(0,\sigma^2)$. In general
-$\Cov(p_r,p_{r'})=\sigma^2\,\uhat_r\cdot\uhat_{r'}$.
-\end{lemma}
-
-\begin{proof}
-$p=\hat V^\top l$ with $\hat V$ the $D\times R$ matrix of directions. A linear image of a
-Gaussian is Gaussian, with mean $0$ and covariance
-$\hat V^\top(\sigma^2 I_D)\hat V = \sigma^2\hat V^\top \hat V$, whose entries are
-$\sigma^2\uhat_r\cdot\uhat_{r'}$. Orthonormality makes this $\sigma^2 I_R$, and for a
-Gaussian vector a diagonal covariance is equivalent to independence. Extending
-$\{\uhat_r\}$ to an orthonormal basis exhibits the $p_r$ as coordinates of $l$ in that
-basis, which are independent and identically distributed $\mathcal{N}(0,\sigma^2)$.
-\end{proof}
-
-Under A5 and A6 the array therefore collapses to its final and much simpler form,
+\paragraph{Step 3b. One shared threshold.} With equal norms the thresholds of
+\eqref{eq:Theta} coincide:
 \begin{equation}
   \boxed{\;a_r = \mathbf{1}[p_r > \tau],
   \qquad
-  \tau = \frac{\Theta + U^2}{2U},
-  \qquad
-  p_r \stackrel{\text{iid}}{\sim}\mathcal{N}(0,\sigma^2),}
+  \tau = \frac{\Theta + U^2}{2U}. }
   \label{eq:tau}
 \end{equation}
-with one and the same $\tau$ for every receptor: \emph{$R$ independent Gaussian variables
-cut by a single common random threshold}.
+Each receptor compares its own projection with one threshold common to the whole array.
 
-\section{Step 4: conditioning on the common mode}
+\begin{lemma}[Statistics of the private projections]
+\label{lem:orth}
+The vector $p=(p_1,\dots,p_R)$ is Gaussian with mean zero and
+\begin{equation}
+  \Var(p_r)=\sigma^2,
+  \qquad
+  \Cov(p_r,p_{r'}) = \sigma^2\,\uhat_r\cdot\uhat_{r'} .
+  \label{eq:gram}
+\end{equation}
+\end{lemma}
+
+\begin{proof}
+$p=\hat V^\top l$ with $\hat V$ the $D\times R$ matrix whose columns are the $\uhat_r$. A
+linear image of a Gaussian is Gaussian, with mean $0$ and covariance
+$\sigma^2\hat V^\top\hat V$, whose $(r,r')$ entry is $\sigma^2\uhat_r\cdot\uhat_{r'}$ and
+whose diagonal is $\sigma^2$ because the $\uhat_r$ are unit vectors.
+\end{proof}
+
+\paragraph{Step 3c. Two numbers.} By A5 every pair of directions has the same cosine
+$\kappa$. The array is then described by
+\begin{equation*}
+  \nu \equiv \frac{\sd(\tau)}{\sigma},
+  \qquad
+  \kappa = \uhat_r\cdot\uhat_{r'} \quad (r\neq r').
+\end{equation*}
+$\nu$ compares the fluctuation of the shared threshold with the spread $\sigma$ of each
+private projection. It depends on the norm $U$ and on the environment (Step~5d), not on
+the directions. $\kappa$ depends on the directions only. Step~4 shows that
+the MI depends on the two through a single combination $\nueff$, and Step~5
+chooses them.
+
+\section{Step 4: from the threshold to the law of the pattern}
 \label{sec:step4}
 
-\paragraph{Step 4a. Freeze the common mode.} Adopt A4 and treat $\tau$ as independent of
-$(p_1,\dots,p_R)$. Conditionally on $\tau=t$ the activities $a_r=\mathbf{1}[p_r>t]$ are
-functions of independent variables, hence independent, and identically distributed:
+\paragraph{Step 4a. One receptor at a fixed threshold.} The randomness is over sniffs.
+Consider the sniffs that produce a given value of $\tau$. Under A4 the projection $p_r$ is
+independent of $\tau$, so among those sniffs it is still $\mathcal N(0,\sigma^2)$ by
+Lemma~\ref{lem:orth}. Since $\PP(X>x)=\Phibar\big((x-\mu)/s\big)$ for
+$X\sim\mathcal N(\mu,s^2)$, the fraction of those sniffs in which receptor $r$ fires is
 \begin{equation}
-  q(t) \;\equiv\; \PP(p_r > t)
-       \;=\; \PP\!\left(\frac{p_r}{\sigma} > \frac{t}{\sigma}\right)
-       \;=\; \Phibar\!\left(\frac{t}{\sigma}\right).
+  q(\tau) \equiv \PP(p_r>\tau\mid\tau) = \Phibar(\tau/\sigma) = \Phi(-\tau/\sigma).
+  \label{eq:qtau}
+\end{equation}
+The marginal firing rate is its average, $\PP(a_r=1)=\EE[q(\tau)]$. If $\tau$ is Gaussian
+(A8), $p_r-\tau$ is Gaussian with mean $-\EE[\tau]$ and variance $\sigma^2+\Var(\tau)$, so
+\begin{equation*}
+  \PP(a_r=1)=\Phi\!\left(\frac{-\EE[\tau]}{\sqrt{\sigma^2+\Var(\tau)}}\right),
+\end{equation*}
+which equals $1/2$ if and only if $\EE[\tau]=0$. This is the balance condition of Step~5c.
+It involves only the mean of $\tau$, so it cannot tell whether the noise in $p_r-\tau$
+is private or shared.
+
+\paragraph{Step 4b. Orthogonal directions.} Take $\kappa=0$ first. The projections are
+then jointly Gaussian with zero covariance, hence independent, so among the sniffs with a
+given $\tau$ the receptors are independent coins sharing the bias $q(\tau)$. The bias
+changes from sniff to sniff with $\tau$. At balance write $\tau=\sd(\tau)\,z$ with $z$ a
+standard normal (A8). Then
+\begin{equation*}
+  q = \Phibar(\nu z), \qquad \nu=\frac{\sd(\tau)}{\sigma},
+\end{equation*}
+and $\nu$ is the only number left. For $\nu=0.1$ a typical $z=\pm1$ gives $q\approx0.46$
+or $0.54$, nearly fair independent coins. For $\nu=1$ it gives $0.16$ or $0.84$, and the
+receptors tend to switch together. For $\nu\gg1$, $q$ is almost always $0$ or $1$ and the
+array fires as a single receptor.
+
+\paragraph{Step 4c. Any common cosine.} For $\kappa\neq0$ the projections are correlated
+even at fixed $\tau$, so $\tau$ no longer makes the receptors independent and another
+shared variable is needed. Define the firing variables $x_r\equiv(p_r-\tau)/\sigma$, so
+that $a_r=\mathbf 1[x_r>0]$. Under A4, Lemma~\ref{lem:orth} gives
+\begin{equation}
+  \boxed{\;\Var(x_r)=1+\nu^2,
+  \qquad
+  \Cov(x_r,x_{r'})=\kappa+\nu^2 .}
+  \label{eq:sigmax}
+\end{equation}
+The covariance has two contributions. $\nu^2$ is positive: the shared threshold pushes
+every receptor the same way. $\kappa$ has a sign the design chooses: with a negative
+cosine a ligand that raises $p_1$ lowers $p_2$, which pushes the two receptors apart. All
+variances are equal and all covariances are equal. When the $x_r$ are jointly Gaussian
+(A8) and $\kappa+\nu^2\ge0$, they have the same law as
+\begin{equation}
+  x_r = -\sqrt{\kappa+\nu^2}\;z + \sqrt{1-\kappa}\;\varepsilon_r ,
+  \label{eq:onefactor}
+\end{equation}
+with $z,\varepsilon_1,\dots,\varepsilon_R$ independent standard normals: the variance is
+$(\kappa+\nu^2)+(1-\kappa)$, and two receptors share only $z$. The scalar $z$ is the part
+of the common mode that the directions have not cancelled. Dividing $x_r>0$ by
+$\sqrt{1-\kappa}$,
+\begin{equation}
+  \boxed{\;a_r=\mathbf 1\big[\,\varepsilon_r > \nueff\, z\,\big],
+  \qquad
+  \nueff^2 \;\equiv\; \frac{\kappa+\nu^2}{1-\kappa}
+  = \frac{\text{shared variance}}{\text{private variance}} . }
+  \label{eq:nueff}
+\end{equation}
+Given $z$ each $a_r$ depends on its own $\varepsilon_r$, so the receptors are independent
+coins with the common bias
+\begin{equation}
+  q(z) = \PP(\varepsilon_r > \nueff z\mid z) = \Phibar(\nueff z).
   \label{eq:q}
 \end{equation}
+This is Step~4b with $\nu$ replaced by $\nueff$, and $\kappa=0$ gives back $\nueff=\nu$.
 
-\paragraph{Step 4b. The conditional law of the pattern.} For a pattern
-$a\in\{0,1\}^R$ with $k=\sum_r a_r$ active receptors,
-\begin{align}
-  \PP(A=a\mid \tau=t)
-   &= \prod_{r=1}^R q(t)^{a_r}\big(1-q(t)\big)^{1-a_r}
-     &&\text{(conditional independence)}\notag\\
-   &= q(t)^{\sum_r a_r}\big(1-q(t)\big)^{R-\sum_r a_r}
-     &&\text{(collect equal factors)}\notag\\
-   &= q(t)^{k}\big(1-q(t)\big)^{R-k}.
-     &&\text{(definition of } k)
-\end{align}
-The right-hand side depends on the pattern \emph{only through $k$}, which is the
-property that makes the problem tractable.
+\paragraph{Step 4d. What was assumed.} Two distinct approximations were made.
+\begin{itemize}
+  \item \emph{A4, independence.} $\tau$ contains $\|l\|^2$, which contains $p_r^2$. The
+    error is $O(1/D)$ per receptor (Section~\ref{sec:exact}).
+  \item \emph{A8, Gaussian threshold.} $\Theta=\|l\|^2-\mathrm{Rad}^2(s)$ is not
+    Gaussian. $\|l\|^2$ is $\sigma^2$ times a chi-square with $D$ degrees of freedom, of
+    skewness $\sqrt{8/D}$, which is $0.89$ at $D=10$. $\mathrm{Rad}^2(s)$ is a nonlinear
+    function of $s$, Gaussian only after linearisation in $s$ (A7), and it has the
+    saturation atoms of Step~1d.
+\end{itemize}
+A8 is used in two places only. First, to summarise the law of $\tau$ by its standard
+deviation. Without A8, Step~4b holds with $q=\Phibar(\tau/\sigma)$ averaged over the true
+law of $\tau$, and the shape of that law matters, not only its spread $\nu$. Second, in
+Step~4c for $\kappa<0$, to merge the negative covariance of the projections with the
+fluctuation of $\tau$ into one shared Gaussian. For $\kappa\ge0$ no Gaussianity is needed:
+write $p_r=\sigma(\sqrt\kappa\,g+\sqrt{1-\kappa}\,\varepsilon_r)$ with $g$ a shared
+standard normal, and the shared variable $\sqrt\kappa\,g-\tau/\sigma$ may have any law. For
+$\kappa<0$ and a non-Gaussian $\tau$ no exact reduction to one shared variable is given
+here.
 
-\paragraph{Step 4c. Average over the common mode.} Writing $\Pi_k$ for the resulting
-pattern probability,
+\paragraph{Step 4e. The law of the pattern.} For a pattern $a\in\{0,1\}^R$ with
+$k=\sum_r a_r$ active receptors, conditional independence gives
+$\PP(A=a\mid z)=q(z)^k\big(1-q(z)\big)^{R-k}$, which depends on $a$ only through $k$.
+Averaging over the factor,
 \begin{equation}
-  \PP(A=a) = \EE_\tau\!\left[q(\tau)^k\big(1-q(\tau)\big)^{R-k}\right] \equiv \Pi_k,
-  \qquad k=\textstyle\sum_r a_r .
-  \label{eq:Pi}
-\end{equation}
-So $A$ is an \textbf{exchangeable} binary vector, a mixture of independent and
-identically distributed Bernoulli vectors with mixing variable $q(\tau)\in[0,1]$. This is
-the finite de Finetti representation, obtained constructively rather than invoked.
-
-\paragraph{Step 4d. The law of the count.} There are $\binom{R}{k}$ patterns with $k$
-active receptors, each of probability $\Pi_k$, so
-\begin{equation}
-  \PP(K=k) = \binom{R}{k}\Pi_k, \qquad k=0,\dots,R.
+  \PP(A=a) = \EE_z\!\left[q(z)^k\big(1-q(z)\big)^{R-k}\right] \equiv \Pi_k,
+  \qquad
+  \PP(K=k) = \binom{R}{k}\Pi_k, \quad k=0,\dots,R.
   \label{eq:PK}
 \end{equation}
+$A$ is an exchangeable binary vector. As a check,
+$\sum_k\binom Rk\Pi_k=\EE_z\big[(q+1-q)^R\big]=1$ by the binomial theorem.
 
-\begin{sanity}
-$\sum_k \binom{R}{k}\Pi_k
- = \EE_\tau\big[\sum_k\binom{R}{k}q^k(1-q)^{R-k}\big]
- = \EE_\tau\big[(q+1-q)^R\big] = 1$ by the binomial theorem. This is the first assertion
-to put in any implementation.
-\end{sanity}
+\paragraph{Step 4f. What the design must do.}
+\begin{enumerate}
+  \item The law of $A$, hence the MI, depends on the array and the environment only
+    through $R$ and $\nueff$.
+  \item At $\nueff=0$, $q=1/2$ and $\Pi_k=2^{-R}$. The receptors are independent fair
+    coins and $H(A)=R$ bits, the maximum for $R$ binary variables.
+  \item $H(A)$ decreases strictly with $\nueff$ (Appendix~\ref{app:mono}).
+  \item $\nueff$ increases with $\nu$ at fixed $\kappa$, and with $\kappa$ at fixed $\nu$,
+    since $\partial_\kappa\nueff^2=(1+\nu^2)/(1-\kappa)^2>0$.
+\end{enumerate}
+Since $\nu$ depends only on the norm and $\kappa$ only on the directions, the two are
+chosen separately: the norm minimises $\nu$ (Section~\ref{sec:lever}) and the directions
+lower $\kappa$ as far as is useful (Step~5e).
 
 \section{Step 5: statistics of the common mode, for any kernel}
 \label{sec:step5}
@@ -568,45 +682,82 @@ $\Theta=\|l\|^2-\mathrm{Rad}^2(s)$ with $s\perp l$, variances add:
   \Var[\Theta]=2D\sigma^4+\Var[\mathrm{Rad}^2].
   \label{eq:Thetastats}
 \end{equation}
-Equation~\eqref{eq:Thetastats} is the quantitative version of the remark in
-Section~\ref{sec:step2}: the geometric term and the concentration term sit side by side
-in one sum.
+The geometric term and the concentration term sit side by side in one sum.
 
-\paragraph{Step 5c. The balance condition.} Apply the affine map
-$\tau=(\Theta+U^2)/(2U)$ and set $\EE[\tau]=0$, which centres the firing probability on
-$q=1/2$. The numerator must vanish:
+\paragraph{Step 5c. The balance condition.} By Step~4a the firing rate is $1/2$ when
+$\EE[\tau]=0$. With $\tau=(\Theta+U^2)/(2U)$ the numerator must vanish:
 \begin{equation}
   \boxed{\;\EE\big[\mathrm{Rad}^2(s)\big] \;=\; D\sigma^2 + U^2 . }
   \label{eq:balance}
 \end{equation}
-In words, and independently of the kernel: \emph{the mean squared radius of the
-receptive field must equal the mean squared distance from the receptor to a ligand},
-since $\EE\|l-u_r\|^2 = D\sigma^2 + U^2$. Note what has changed relative to a model with
-a fixed baseline. Equation~\eqref{eq:balance} constrains $\Ebase$, which is learnable,
-and therefore it does \emph{not} determine $U$. The norm remains free, and fixing it is
-the job of Section~\ref{sec:lever}.
+The mean squared radius of the receptive field equals the mean squared distance from the
+receptor to a ligand, $\EE\|l-u_r\|^2 = D\sigma^2 + U^2$. Because $\Ebase$ is learnable,
+\eqref{eq:balance} determines $\Ebase$ given $U$, not the reverse: the norm remains free,
+and fixing it is the job of Section~\ref{sec:lever}. Without A8 the firing rate is
+$\EE[\Phibar(\tau/\sigma)]$, exactly $1/2$ at $\EE[\tau]=0$ when $\tau$ is symmetric about
+zero, and only approximately when it is skewed.
 
-\begin{remark}[Exact symmetry of the balanced point]
-At $\EE[\tau]=0$ with $\tau$ symmetric about zero the mean firing rate is exactly one
-half: $\tau \overset{d}{=} -\tau$ gives
-$\EE[\Phibar(\tau/\sigma)]=\EE[\Phibar(-\tau/\sigma)]=\EE[1-\Phibar(\tau/\sigma)]$,
-hence $2\EE[q]=1$. Balance controls the mean of $q$, not merely its median.
-\end{remark}
-
-\paragraph{Step 5d. The control parameter.} All that remains is the \emph{spread} of
-$q$, and by \eqref{eq:q} that spread is the standard deviation of $\tau$ measured in
-units of the private-projection scale $\sigma$:
+\paragraph{Step 5d. The control parameter.} By \eqref{eq:Thetastats},
 \begin{equation}
   \boxed{\;\nu \;\equiv\; \frac{\sd(\tau)}{\sigma}
-   \;=\; \frac{\sqrt{\,2D\sigma^4+\Var[\mathrm{Rad}^2(s)]\,}}{2U\sigma}, }
-  \qquad\text{so that}\qquad
-  \frac{\tau}{\sigma} = \nu z,\quad z\sim\mathcal{N}(0,1),\quad q=\Phibar(\nu z),
+   \;=\; \frac{\sqrt{\,2D\sigma^4+\Var[\mathrm{Rad}^2(s)]\,}}{2U\sigma}. }
   \label{eq:nudef}
 \end{equation}
-the last form holding at balance and to the extent that $\Theta$ is Gaussian, which it is
-for large $D$ by the central limit theorem applied to $\|l\|^2$. In words, $\nu$ is the
-ratio of the common-mode fluctuation, which pushes every receptor the same way, to the
-private signal, which pushes each receptor differently.
+$\nu$ is the ratio of the common-mode fluctuation, which pushes every receptor the same
+way, to the private signal, which pushes each receptor differently. It depends on the
+environment and the norm alone. The cosine does not appear in it.
+
+\paragraph{Step 5e. The optimal cosine.} By Step~4f the directions should lower $\kappa$.
+At $\kappa=-\nu^2$ the covariance in \eqref{eq:sigmax} vanishes: the anticorrelation of
+the private projections exactly cancels the push of the shared threshold. Then
+$\nueff=0$, the $x_r$ are uncorrelated jointly Gaussian variables, hence independent, and
+the array delivers $R$ bits. Below $-\nu^2$ the covariance is negative, the receptors are
+anticorrelated, hence dependent, and $H(A)<\sum_r H(a_r)=R$. \textbf{The target is one
+specific negative cosine, $\kappa=-\nu^2$, not the most negative one available.} The
+target may be out of reach, for a geometric reason.
+
+\begin{lemma}[Floor on the mean cosine]
+\label{lem:cosfloor}
+For any $R$ unit vectors in any dimension,
+\begin{equation}
+  \Big\|\sum_{r=1}^R\uhat_r\Big\|^2 = R + R(R-1)\,\langle\cos\rangle \;\ge\; 0
+  \qquad\Longrightarrow\qquad
+  \langle\cos\rangle \;\ge\; -\frac{1}{R-1},
+  \label{eq:cosfloor}
+\end{equation}
+the mean being over the $R(R-1)$ ordered pairs, with equality if and only if
+$\sum_r\uhat_r=0$.
+\end{lemma}
+
+\begin{proof}
+Expand the square and use $\|\uhat_r\|=1$. A squared norm is non-negative and vanishes
+only for the zero vector.
+\end{proof}
+
+All pairs can share one cosine $\kappa$ only if the Gram matrix $(1-\kappa)I+\kappa J$,
+with $J$ the all-ones matrix, has rank at most $D$. Its eigenvalues are $1-\kappa$, with
+multiplicity $R-1$, and $1+(R-1)\kappa$, which vanishes at the floor. Hence $R\le D$, or
+$R\le D+1$ at the floor, where the positions form a regular simplex. The case $R>D+1$ is
+Section~\ref{sec:corner}. The optimum is the target, clipped by the floor:
+\begin{equation}
+  \boxed{\;\kappa_\star = -\min\!\left(\nu^2,\ \frac{1}{R-1}\right),
+  \qquad
+  \nueff^2\big|_{\kappa_\star} = \max\!\left(0,\ \frac{\nu^2(R-1)-1}{R}\right).}
+  \label{eq:cosopt}
+\end{equation}
+It satisfies $\kappa_\star+\nu^2\ge0$, as Step~4c requires. \textbf{The radius sets $\nu$,
+the angle sets $\nueff$ at given $\nu$, and the information depends on $\nueff$ alone.}
+
+\paragraph{Step 5f. Two consequences worth naming.} First, a \textbf{lossless window}. The
+cancelling cosine is reachable whenever $\nu^2\le1/(R-1)$, that is
+\begin{equation}
+  R \;\le\; R_{\mathrm{lossless}} \;=\; 1+\frac{1}{\nu^2},
+  \label{eq:rlossless}
+\end{equation}
+and there the common mode costs nothing whatsoever. Second, since
+$\nueff^2 = \nu^2(R-1)/R - 1/R$ at the floor, $\nueff\to\nu$ as $R\to\infty$: the angular
+freedom matters at small $R$ and is asymptotically irrelevant, so every large-$R$ statement
+below may be read with either symbol.
 
 \section{Step 6: specialising to the gaussian kernel}
 \label{sec:gaussian}
@@ -883,9 +1034,10 @@ discrete-information notes, so the two formalisms agree.
 
 \subsection{Route 2: the chain rule through the mixing variable}
 
-\paragraph{Step 8c.} Condition on $\tau$ and use $H(A)=H(A\mid\tau)+I(A;\tau)$. By
-conditional independence and additivity of entropy over independent variables,
-$H(A\mid\tau=t)=\sum_r \htwo(q(t))=R\,\htwo(q(t))$, so
+\paragraph{Step 8c.} Condition on the shared factor $z$ of \eqref{eq:onefactor} and use
+$H(A)=H(A\mid z)+I(A;z)$. By conditional independence and additivity of entropy over
+independent variables, $H(A\mid z)=R\,\htwo(q(z))$, and $I(A;z)=I(A;q)$ since $q$ is a
+one-to-one function of $z$ for $\nueff>0$, so
 \begin{equation}
   \boxed{\;H(A)=R\,\EE\big[\htwo(q)\big]+I(A;q).}
   \label{eq:chain}
@@ -909,13 +1061,15 @@ should be verified before it is cited; only the $\frac12\log_2 R$ scaling is use
 \paragraph{Step 8e. The working formula.} Combining,
 \begin{equation}
   \boxed{\;\mathrm{MI}=H(A)\simeq R\,
-   \underbrace{\EE_z\big[\htwo\big(\Phibar(\nu z)\big)\big]}_{\textstyle \eta(\nu)}
+   \underbrace{\EE_z\big[\htwo\big(\Phibar(\nueff z)\big)\big]}_{\textstyle \eta(\nueff)}
    +\tfrac12\log_2 R+\text{const},}
   \label{eq:working}
 \end{equation}
-where $\eta(\nu)\in[0,1]$ is the \textbf{information efficiency per receptor}. It is a
+where $\eta(\cdot)\in[0,1]$ is the \textbf{information efficiency per receptor}. It is a
 single one-dimensional Gaussian integral, computable to machine precision by
-Gauss--Hermite quadrature, and it depends on nothing but $\nu$.
+Gauss--Hermite quadrature, and it depends on nothing but its argument.
+Section~\ref{sec:limits} studies $\eta$ as a function; the array evaluates it at $\nueff$,
+given in closed form by \eqref{eq:nueff} and at the optimal angle by \eqref{eq:cosopt}.
 
 \section{Step 9: limits, asymptotics, and worked numbers}
 \label{sec:limits}
@@ -1023,17 +1177,24 @@ resets the baseline through \eqref{eq:zbar}.
 \section{Step 10: what assumption A4 costs, and how to remove it}
 \label{sec:exact}
 
-\paragraph{Step 10a. Where the dependence hides.} Decompose the ligand in the orthonormal
-receptor basis extended to all of $\RR^D$,
+\paragraph{Step 10a. Where the dependence hides.} The receptor directions are equiangular,
+not orthogonal, so they are not themselves a basis. Take instead any orthonormal basis
+$e_1,\dots,e_{R'}$ of their span, $R'=\dim\mathrm{span}\{\uhat_r\}\le\min(R,D)$, extended
+to all of $\RR^D$, and write
 \begin{equation}
-  l=\sum_{j=1}^R p_j\uhat_j+l_\perp,
+  l=\sum_{j=1}^{R'} g_j e_j+l_\perp,
   \qquad
-  \|l\|^2=\sum_{j=1}^R p_j^2+W,
+  \|l\|^2=\sum_{j=1}^{R'} g_j^2+W,
   \qquad
-  W\equiv\|l_\perp\|^2\sim\sigma^2\chi^2_{D-R}.
+  W\equiv\|l_\perp\|^2\sim\sigma^2\chi^2_{D-R'},
 \end{equation}
-So the common mode $\Theta=\|l\|^2-\mathrm{Rad}^2(s)$ is not independent of the private
-projections: it contains their squares. Assumption A4 ignored this.
+with $g_j$ independent $\mathcal{N}(0,\sigma^2)$. Every private projection is a unit-norm
+combination of the $g_j$, since $p_r=\uhat_r\cdot l=\sum_j(\uhat_r\cdot e_j)g_j$ and
+$\sum_j(\uhat_r\cdot e_j)^2=\|\uhat_r\|^2=1$. So the common mode
+$\Theta=\|l\|^2-\mathrm{Rad}^2(s)$ is not independent of the private projections: it
+contains the same $g_j$ that build them. Assumption A4 ignored this. Nothing below depends
+on the directions being orthogonal, only on this decomposition, so the error estimate
+carries over unchanged.
 
 \paragraph{Step 10b. The exact per-receptor condition.} Since $u_r=U\uhat_r$ has
 component $U$ along $\uhat_r$ and zero elsewhere,
@@ -1139,20 +1300,28 @@ reproduce, which is a far stronger test of the pipeline than internal convergenc
 \section{Step 12: releasing A6, and the transition at $\nu=1$}
 \label{sec:stagger}
 
-Assumption A6 made every receptor identical. This section releases it. The key fact,
-and the reason this section is different from what it would have been with a fixed
-baseline, is that $\Ebase$ is learnable per receptor, so \emph{threshold diversity is
-free}: it costs no displacement in latent space.
+Assumption A6 made every receptor identical. This section releases it, keeping the shared
+energies of Section~\ref{sec:model}, so the only way to give two receptors different
+thresholds is to give them different norms.
+
+Threshold diversity is therefore \textbf{not} free. By Step~2c the norm has two roles at
+once: it sets the threshold, and it sets the lever arm $1/(2U_r)$ with which the common
+mode reaches that receptor. A ladder of thresholds is bought at the price of a spread of
+lever arms, and that trade-off is what produces a transition rather than a monotone
+preference for one design. It also makes the prediction measurable: the signature of
+staggering is the dispersion of the norms, $\sd(U)/\langle U\rangle$, which under the
+shared-energy convention cannot be moved by any compensating change of baseline.
 
 \paragraph{Step 12a. The general conditional-independence formula.} Return to
-\eqref{eq:Theta} and keep $U_r$, $\Ebase^{(r)}$, $\Emax^{(r)}$ distinct. The threshold
+\eqref{eq:Theta} and keep the norms $U_r$ distinct, the energies staying shared. The
+threshold
 $\tau_r$ is then a deterministic function of the \emph{two} shared scalars
 $\big(\|l\|^2, s\big)$, and conditionally on that pair the receptors are independent
 because each depends on its own private projection. Writing
 \begin{equation}
   q_r\big(\|l\|^2,s\big)
    = \Phibar\!\left(\frac{1}{\sigma}\,
-     \frac{\|l\|^2-\mathrm{Rad}_r^2(s)+U_r^2}{2U_r}\right),
+     \frac{\|l\|^2-\mathrm{Rad}^2(s)+U_r^2}{2U_r}\right),
 \end{equation}
 the chain rule of Step~8c gives the general working formula
 \begin{equation}
@@ -1178,16 +1347,17 @@ and $\log_2\binom{R}{0}=\log_2\binom{R}{R}=0$, giving $H(A)\to1$ bit. An array o
 identical receptors has degenerated into a single one.
 
 \paragraph{Step 12d. Staggered receptors in the same limit.} Now give receptor $r$ its
-own baseline. For $\nu\gg1$ neglect the private projections, so by \eqref{eq:Theta}
+own norm $U_r$. For $\nu\gg1$ neglect the private projections, so by \eqref{eq:Theta}
 \begin{equation}
-  a_r \approx \mathbf{1}\!\left[\,\mathrm{Rad}_r^2(s) > \|l\|^2+U_r^2\,\right].
+  a_r \approx \mathbf{1}\!\left[\,\mathrm{Rad}^2(s) > \|l\|^2+U_r^2\,\right].
 \end{equation}
-The receptors switch on in the order of their thresholds as the shared variables move:
-the array has become a \textbf{thermometer code} on the common mode, with $R+1$
-reachable patterns. Choosing the baselines so those patterns are equiprobable gives
-$H(A)\to\log_2(R+1)$ bits. Crucially, by \eqref{eq:zbar} each $\Ebase^{(r)}$ sets
-$\bar z_r$ directly, so this ladder is obtained without moving any receptor and without
-sacrificing any lever arm.
+The receptors switch on in order of increasing $U_r$ as the shared variables move: the
+array has become a \textbf{thermometer code} on the common mode, with $R+1$ reachable
+patterns. Spacing the norms so those patterns are equiprobable gives
+$H(A)\to\log_2(R+1)$ bits, against the single bit of Step~12c. The ladder is paid for in
+lever arms: by Step~2c the receptor at radius $U_r$ is exposed to the common mode through
+$1/(2U_r)$, so a spread of norms is also a spread of exposures, and only in this limit,
+where the common mode dominates everything, is that a price worth paying.
 
 \paragraph{Step 12e. The cost of staggering when $\nu$ is small.} Repeating Steps 9a to
 9c with a nonzero mean, $q_r=\Phibar(\mu_r+\nu_r z)$ with $\mu_r=\EE[\tau_r]/\sigma$,
@@ -1200,26 +1370,26 @@ the second gains at most $\log_2(R+1)$ in total. For large $R$ the loss is exten
 the gain logarithmic, so staggering is unambiguously bad.
 
 \paragraph{Step 12f. The crossover.} The two arguments meet where the common-mode
-standard deviation equals the private-signal standard deviation, which by
-\eqref{eq:nudef} is exactly $\nu=1$:
+standard deviation equals the private-signal standard deviation, and by Step~4c that
+comparison is made in factor coordinates, so the condition is $\nueff=1$. Using
+\eqref{eq:cosopt} and solving $\big(\nu^2(R-1)-1\big)/R=1$ gives
 \begin{equation}
-  \boxed{\;\text{stagger the thresholds if and only if } \nu>1 .}
+  \boxed{\;\text{stagger if and only if }\ \nueff>1,
+   \ \text{ i.e. }\ \nu \;>\; \nu_{\mathrm{stag}}(R)=\sqrt{\frac{R+1}{R-1}}.}
+  \label{eq:nustag}
 \end{equation}
+The threshold is therefore \textbf{$R$-dependent}: $1.73$ at $R=2$, $1.29$ at $R=4$,
+$1.06$ at $R=16$. Small arrays stay balanced to higher $\nu$, because for them the
+geometric floor $-1/(R-1)$ is loose enough to cancel more of the common mode. The
+$R$-dependence is a prediction and not a fitted curve, and the simulator reproduces its
+ordering: at $\nu\approx1.43$ the two-receptor array is still balanced,
+$\mathrm{std}(U)/\langle U\rangle=0.02$, while the four-receptor array has laddered,
+$0.30$, against predicted thresholds of $1.73$ and $1.29$.
 Below the transition the optimal array is a set of identical balanced receptors at the
 common radius $U_\star$ of Section~\ref{sec:lever} with spread-out directions. Above it,
 the optimal array is a ladder of baselines tiling the range of the common mode. This is
 a genuine symmetry-breaking transition in the design, not a smooth reweighting, and it
 is the central qualitative prediction of this document.
-
-\begin{remark}[A second staggering axis, opened by a learnable $\Emax$]
-Equation~\eqref{eq:sdrad} shows that a receptor's exposure to concentration noise is
-set by its dynamic range $\Gamma_r=\Emax^{(r)}/\sigma_c$. Since $\Emax$ is learnable per
-unit, the array can also stagger \emph{in $\Gamma$}, dedicating high-$\Gamma$ receptors
-to concentration-insensitive identity reading and low-$\Gamma$ receptors to level
-reading. This is a prediction with no analogue in a fixed-kernel model and it is easy to
-test: inspect the spread of the optimised $\Emax$ values and check whether it correlates
-with the receptors' contribution to $I(A;c)$ rather than $I(A;l)$.
-\end{remark}
 
 \begin{remark}[Computing the staggered case]
 With distinct receptors the pattern probability is no longer a function of $K$, so
@@ -1234,10 +1404,14 @@ capture.
 \section{Step 13: the other corner, $R>D$}
 \label{sec:corner}
 
-When $R$ exceeds $D$ the directions cannot be orthogonal, Lemma~\ref{lem:orth} gives
-$\Cov(p_r,p_{r'})=\sigma^2\uhat_r\cdot\uhat_{r'}\neq0$, and a second source of
-redundancy appears that has nothing to do with $\nu$. Conditional independence fails and
-the exchangeable reduction is lost. The relevant statement becomes a counting bound: at
+Above $R=D+1$ the equiangular design of Step~5e is no longer available. The equiangular Gram
+matrix at the floor has rank $R-1$, so the pairs cannot all share one cosine: by
+Lemma~\ref{lem:cosfloor} the \emph{mean} stays pinned at $-1/(R-1)$, which is dimension
+free, but the individual cosines must spread around it, and that spread is the measurable
+signature of this corner. With unequal cosines the covariance leaves the one-factor form
+\eqref{eq:sigmax}, so there is no single residual factor to condition on, the exchangeable
+reduction is lost, and a second source of redundancy appears that has nothing to do with
+$\nu$. The relevant statement becomes a counting bound: at
 fixed concentration each receptive field is a ball \eqref{eq:ball}, $R$ balls in $\RR^D$
 lift to $R$ hyperplanes in $\RR^{D+1}$ through $l\mapsto(l,\|l\|^2)$, and the number of
 cells of such an arrangement grows polynomially in $R$ with exponent set by the
@@ -1274,7 +1448,7 @@ $(D,\sigma,\lambda,\Emax,\sigma_c,R)$:
         $\Pi_k=\sum_i\omega_i q_i^k(1-q_i)^{R-k}$ evaluated in log space with
         \texttt{lgamma} for the binomials.
   \item $\PP(K=k)=\binom{R}{k}\Pi_k$. Assert it sums to one, which is the check of
-        Step~4d.
+        Step~4e.
   \item $\mathrm{MI}=H(K)+\sum_k\PP(K=k)\log_2\binom{R}{k}$ from \eqref{eq:grouping},
         and independently $R\eta(\nu)+I(A;\tau)$ from \eqref{eq:chain}. The two must
         agree. Disagreement means the quadrature is too coarse in the tails, which is
@@ -1325,7 +1499,8 @@ Receptive field is exactly a ball & \eqref{eq:ball} & exact, gaussian kernel \\
 $\Ebase$ sets the operating point, $\Emax$ the dynamic range & \eqref{eq:Zlaw} & exact \\
 Common mode $\Theta=\|l\|^2-\mathrm{Rad}^2(s)$ & \eqref{eq:Theta} & exact \\
 Concentration spread $\equiv$ radial cloud breathing & \eqref{eq:Thetastats} & exact \\
-Array $=$ $R$ Gaussians cut by one shared threshold & \eqref{eq:tau} & exact under A5, A6 \\
+Firing variables equicorrelated & \eqref{eq:sigmax} & exact under A4, A5, A6 \\
+$a_r=\mathbf 1[\varepsilon_r>\nueff z]$ & \eqref{eq:nueff} & exact under A4, A8 \\
 Balance: $\EE[\mathrm{Rad}^2]=D\sigma^2+U^2$ & \eqref{eq:balance} & exact, any kernel \\
 Operating point $\bar z=e^{-(\rho^2+w)}$ & \eqref{eq:zbar} & delta method \\
 Concentration noise $\propto e^{\rho^2+w}$ & \eqref{eq:sdrad} & delta method \\
@@ -1334,13 +1509,19 @@ Quadratic kernel has no optimal $U$ & \eqref{eq:nuquad} & exact in that limit \\
 Optimal lever arm, Lambert $W$ & \eqref{eq:numin} & delta method \\
 $U_\star\simeq\lambda\sqrt{\ln\Gamma}$, $\nu_{\min}\simeq\rho/\sqrt{2\ln\Gamma}$ & \eqref{eq:scaling} & asymptotic \\
 Self-consistency $\Gamma\bar z|_\star=\sqrt{\Lambda D/2\rho^4}$ & \eqref{eq:selfcons} & exact given A7 \\
-$\mathrm{MI}=H(K)+\EE[\log_2\binom{R}{K}]$ & \eqref{eq:grouping} & exact under A4 \\
+$\mathrm{MI}=H(K)+\EE[\log_2\binom{R}{K}]$ & \eqref{eq:grouping} & exact under A4, A8 \\
 $\eta(\nu)=1-0.459\nu^2$ & \eqref{eq:smallnu} & small $\nu$ \\
 $\eta(1)=1/(2\ln2)=0.7213$ & \eqref{eq:nu1} & exact \\
 $\eta(\nu)\approx1.040/\nu$ & \eqref{eq:largenu} & large $\nu$ \\
 Error of A4 & $O(1/D)$ per receptor & bounded \\
 $H(A\mid l)\le\log_2(R+1)$, thermometer & \eqref{eq:split} & exact \\
-Stagger if and only if $\nu>1$ & Step~12f & asymptotic argument \\
+$H(A)$ decreases strictly with $\nueff$ & Appendix~\ref{app:mono} & exact \\
+$\langle\cos\rangle\ge-1/(R-1)$, zero-sum & \eqref{eq:cosfloor} & exact, dimension-free \\
+Stagger iff $\nueff>1$ & \eqref{eq:nustag} & asymptotic argument \\
+$\kappa_\star=-\min(\nu^2,1/(R-1))$ & \eqref{eq:cosopt} & exact for equiangular \\
+$\nueff^2=(\kappa+\nu^2)/(1-\kappa)$ & \eqref{eq:nueff} & exact under A4, A8 \\
+Lossless while $R\le1+1/\nu^2$ & \eqref{eq:rlossless} & exact \\
+
 \bottomrule
 \end{tabular}
 \end{center}
@@ -1360,6 +1541,43 @@ Stagger if and only if $\nu>1$ & Step~12f & asymptotic argument \\
 \end{enumerate}
 
 \appendix
+
+\section{\texorpdfstring{$H(A)$}{H(A)} decreases with \texorpdfstring{$\nueff$}{nu\_eff}}
+\label{app:mono}
+
+Let $y_r=(\varepsilon_r-\nueff z)/\sqrt{1+\nueff^2}$. By \eqref{eq:nueff},
+$a_r=\mathbf 1[y_r>0]$, and the $y_r$ are standard normals with common correlation
+$\nueff^2/(1+\nueff^2)$, which increases with $\nueff$. It suffices to show that $H(A)$
+decreases when this correlation increases. Write $C_{ij}$ for the correlation of $y_i$ and
+$y_j$, and $P_a$ for the probability of pattern $a$.
+
+\paragraph{Plackett's identity.} The Gaussian density $\varphi_C$ with correlation matrix
+$C$ satisfies $\partial\varphi_C/\partial C_{ij}=\partial^2\varphi_C/\partial y_i\partial
+y_j$ for $i\neq j$. Integrating over the orthant $\{y_r>0$ if $a_r=1$, $y_r<0$ if
+$a_r=0\}$ gives $\partial P_a/\partial C_{ij}=\pm\,\omega_{ij}$, with the sign $+$ if
+$a_i=a_j$ and $-$ otherwise. Here $\omega_{ij}>0$ is the integral of $\varphi_C$ at
+$y_i=y_j=0$ over the other coordinates restricted to their orthant, so it depends only on
+the activities of the other receptors.
+
+\paragraph{Entropy derivative.} Since $\sum_aP_a=1$,
+$\partial H/\partial C_{ij}=-\sum_a(\partial P_a/\partial C_{ij})\log_2P_a$. Fix the
+activities of the other receptors, $n$ of them active. The four values of $(a_i,a_j)$ have
+probabilities $\Pi_{n+2}$ (both active), $\Pi_n$ (both silent) and $\Pi_{n+1}$ (twice), so
+\begin{equation*}
+  \frac{\partial H}{\partial C_{ij}}
+  =-\sum_{\text{other activities}}\omega_{ij}\,
+  \log_2\frac{\Pi_{n+2}\,\Pi_n}{\Pi_{n+1}^2}.
+\end{equation*}
+
+\paragraph{Log-convexity.} By the Cauchy--Schwarz inequality applied to \eqref{eq:PK},
+\begin{equation*}
+  \Pi_{n+1}=\EE_z\big[q^{n+1}(1-q)^{R-n-1}\big]
+  \le\sqrt{\EE_z\big[q^n(1-q)^{R-n}\big]\,\EE_z\big[q^{n+2}(1-q)^{R-n-2}\big]}
+  =\sqrt{\Pi_n\Pi_{n+2}},
+\end{equation*}
+with equality only if $q(z)$ is constant, that is $\nueff=0$. For $\nueff>0$ every
+logarithm above is positive, so $\partial H/\partial C_{ij}<0$ for every pair, and $H(A)$
+decreases strictly as the common correlation, hence $\nueff$, grows.
 
 \section{Heteromers}
 \label{app:hetero}
@@ -1456,8 +1674,13 @@ and of course $v_{\mathrm{het}}=\bar v$. Therefore
   \boxed{\;\big(v,B\big)_{\mathrm{het}}
    = \text{centroid of } \big\{(v,B)_u : u \in \text{subunits}\big\}. }
 \end{equation}
-This statement is true \emph{only because $\Ebase$ is learnable}: it is what makes $B_u$
-a free coordinate rather than a function of $v_u$. Two corollaries follow.
+This statement needs $B_u$ to be a free coordinate rather than a function of $v_u$, so
+\textbf{this appendix relaxes the shared-energy convention of Section~\ref{sec:model} to
+per-gene energies}. That is the physical reading, since distinct genes are distinct
+molecules with their own affinities, and it is the weaker assumption, so a bound proved
+here also holds under the sharing convention. It is not the configuration the homomer
+simulations run, and the main text's statements about norms are not to be carried across.
+Two corollaries follow.
 
 \paragraph{Containment.} A homomer of gene $u$ realises an arbitrary point
 $(v_u,B_u)\in\RR^{D+1}$, since position and baseline are independently learnable. A
@@ -1497,6 +1720,28 @@ its heteromers, since the latter sit a factor $\sqrt{\ksub}$ closer in. A gene c
 optimised for its heteromers places its homomers too far out, and conversely. Quantifying
 that compromise, which requires the joint distribution of $(\bar v,S^2)$ over subunit
 multisets, is the natural next calculation and is not attempted here.
+
+\subsection{A second penalty, from the angular constraint}
+\label{app:hetero_dirs}
+
+The angular argument of Section~\ref{sec:step3} adds a charge against heteromers that the lever-arm
+argument does not capture. The optimal array is zero-sum, $\sum_r\uhat_r=0$, and a homomer
+array can always achieve it because its receptor coordinates are the gene coordinates and
+those are free. A heteromer sits at the centroid $\bar v$ of its subunits, so its
+\emph{direction} $\bar v/\|\bar v\|$ is an average of gene directions and cannot be chosen
+independently of the others: heteromers drawn from a shared pool have correlated centroids
+by construction. Whether a heteromer repertoire can reach $\sum_r\uhat_r=0$, and with what
+residual, is a question about the joint law of the centroids over subunit multisets and is
+not answered here. Three remarks bound the expectation.
+
+First, the penalty is in the same direction as the lever-arm penalty, so the two compound
+rather than cancel. Second, it is a small-$R$ effect, since
+$\nu_{\mathrm{eff}}\to\nu$ regardless of the directions, so it cannot rescue or destroy
+the large-$R$ conclusions. Third, it is measurable with the diagnostic already used for
+the homomer array: the zero-sum residual $\|\sum_r\uhat_r\|/R$, compared between a homomer
+arm and a heteromer arm at matched $R$ and matched $\nu$. If the heteromer residual is
+systematically larger, this penalty is real and its size is read off directly through
+\eqref{eq:nueff}.
 
 
 \end{document}

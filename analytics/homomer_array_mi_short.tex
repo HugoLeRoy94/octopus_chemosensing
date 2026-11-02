@@ -1,0 +1,221 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage[colorlinks=true,linkcolor=blue]{hyperref}
+
+\newcommand{\RR}{\mathbb{R}}
+\newcommand{\EE}{\mathbb{E}}
+\newcommand{\PP}{\mathbb{P}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\Cov}{\mathrm{Cov}}
+\newcommand{\sd}{\mathrm{sd}}
+\newcommand{\Phibar}{\overline{\Phi}}
+\newcommand{\htwo}{h_2}
+\newcommand{\Ebase}{E_{\mathrm{base}}}
+\newcommand{\Emax}{E_{\mathrm{max}}}
+\newcommand{\uhat}{\hat{u}}
+\newcommand{\nueff}{\nu_{\mathrm{eff}}}
+\setlength{\parskip}{2pt}
+
+\title{Homomer array: conformation and mutual information\\[2pt]
+\large short form}
+\author{}
+\date{\today}
+
+\begin{document}
+\maketitle
+\vspace{-2em}
+
+\noindent
+Derivations, error terms and side results are in \texttt{homomer\_array\_mi.tex}; section
+pointers in the margin notes refer to it. Here: the optimal receptor conformation
+$(U_\star,c_\star)$ and the mutual information it produces.
+
+\section{Model}
+
+\begin{align}
+  l &\sim \mathcal{N}(0,\sigma^2 I_D), \qquad s=\ln c \sim \mathcal{N}(m,\sigma_c^2),
+    \qquad s\perp l, \qquad \text{one ligand per sniff} \\
+  \ln EC_{50}^{(r,l)} &= \Ebase + \Emax\Big(1-e^{-\|l-u_r\|^2/\lambda^2}\Big),
+    \qquad u_r = U_r\,\uhat_r \in\RR^D \\
+  a_r &= \mathbf 1\big[\,s > \ln EC_{50}^{(r,l)}\,\big] \in\{0,1\},
+    \qquad A=(a_1,\dots,a_R), \qquad \mathrm{MI}=H(A)
+\end{align}
+One $(\Ebase,\Emax)$ for the whole array; only $u_r$ is per receptor. Dimensionless groups:
+\begin{equation}
+  \rho=\frac{\sigma\sqrt D}{\lambda},
+  \qquad
+  \Gamma=\frac{\Emax}{\sigma_c},
+  \qquad
+  w=\frac{U^2}{\lambda^2},
+  \qquad
+  \bar z = e^{-(\rho^2+w)} .
+\end{equation}
+
+\section{Reduction}
+
+Match $K_r=e^{-\|l-u_r\|^2/\lambda^2}$ against demand $Z=1-(s-\Ebase)/\Emax$:
+\begin{align}
+  a_r=1 &\iff K_r>Z \iff \|l-u_r\|^2 < \mathrm{Rad}^2 \equiv -\lambda^2\ln Z \\
+        &\iff p_r > \tau_r,
+  \qquad p_r\equiv\uhat_r\cdot l,
+  \qquad \tau_r=\frac{\Theta+U_r^2}{2U_r},
+  \qquad \Theta\equiv\|l\|^2-\mathrm{Rad}^2(s)
+  \label{eq:red}
+\end{align}
+$\Theta$ carries no index: it is the common mode. Private statistics:
+\begin{equation}
+  \Cov(p_r,p_{r'})=\sigma^2\,\uhat_r\cdot\uhat_{r'},
+  \qquad
+  \Var(p_r)=\sigma^2 .
+  \label{eq:gram}
+\end{equation}
+
+\section{Conformation I: the norm}
+
+Balance $\PP(a_r=1)=\tfrac12$, i.e.\ $\EE[\tau_r]=0$:
+\begin{equation}
+  \EE\big[\mathrm{Rad}^2(s)\big]=D\sigma^2+U^2 .
+  \label{eq:balance}
+\end{equation}
+This fixes $\Ebase$ given $U$, not $U$. $U$ is fixed instead by minimising the common-mode
+exposure
+\begin{equation}
+  \nu \equiv \frac{\sd(\tau)}{\sigma}
+    = \frac{\sqrt{2D\sigma^4+\Var[\mathrm{Rad}^2(s)]}}{2U\sigma}
+  \qquad\overset{\text{gaussian kernel}}{\longrightarrow}\qquad
+  \nu^2(w)=\frac{P+Q\,e^{2w}}{w},
+  \label{eq:nu}
+\end{equation}
+\begin{equation}
+  P=\frac{\rho^2}{2},
+  \qquad
+  Q=\frac{D\,e^{2\rho^2}}{4\rho^2\Gamma^2} .
+\end{equation}
+Moving outward lengthens the lever arm ($1/w$) but amplifies concentration noise
+($e^{2w}$). Setting $\mathrm{d}\nu^2/\mathrm{d}w=0$:
+\begin{equation}
+  \boxed{\;
+  \Lambda=W\!\left(\frac{2\rho^4\Gamma^2}{D}e^{-2\rho^2-1}\right),
+  \qquad
+  w_\star=\frac{1+\Lambda}{2},
+  \qquad
+  U_\star=\lambda\sqrt{w_\star},
+  \qquad
+  \nu_{\min}^2=\frac{\rho^2}{\Lambda} \;}
+  \label{eq:lever}
+\end{equation}
+with $W$ the Lambert function. Large $\Gamma$:
+\begin{equation}
+  w_\star\simeq\ln\Gamma,
+  \qquad
+  U_\star\simeq\lambda\sqrt{\ln\Gamma},
+  \qquad
+  \nu_{\min}\simeq\frac{\rho}{\sqrt{2\ln\Gamma}} .
+\end{equation}
+
+\section{Conformation II: the directions}
+
+Equiangular ansatz $\uhat_r\cdot\uhat_{r'}=c$. Drive $x_r\equiv 2Up_r-U^2-\Theta$,
+$a_r=\mathbf 1[x_r>0]$. By \eqref{eq:gram},
+\begin{equation}
+  \Sigma_x=\alpha I+\beta J,
+  \qquad
+  \alpha=4U^2\sigma^2(1-c),
+  \qquad
+  \beta=4U^2\sigma^2 c+\Var[\Theta],
+  \qquad
+  \rho_x=\frac{\beta}{\alpha+\beta}=\frac{c+\nu^2}{1+\nu^2}.
+  \label{eq:sigmax}
+\end{equation}
+$\rho_x=0$ at $c=-\nu^2$. Geometric constraint, any $R$, any $D$:
+\begin{equation}
+  \Big\|\sum_r\uhat_r\Big\|^2=R+R(R-1)\langle\cos\rangle\ge0
+  \quad\Longrightarrow\quad
+  \langle\cos\rangle\ge-\frac{1}{R-1},
+  \quad\text{equality iff}\ \sum_r\uhat_r=0 .
+  \label{eq:floor}
+\end{equation}
+Hence
+\begin{equation}
+  \boxed{\;
+  c_\star=-\min\!\left(\nu^2,\ \frac{1}{R-1}\right),
+  \qquad
+  \nueff^2\equiv\frac{\beta}{\alpha}=\frac{c+\nu^2}{1-c}
+  \;\overset{c_\star}{=}\;
+  \max\!\left(0,\ \frac{\nu^2(R-1)-1}{R}\right) \;}
+  \label{eq:cstar}
+\end{equation}
+All pairs attain $c_\star$ simultaneously iff $R\le D+1$ (regular simplex).
+
+\section{Mutual information}
+
+One-factor form of \eqref{eq:sigmax}, with $z,\varepsilon_r$ i.i.d.\ standard normal:
+\begin{equation}
+  x_r=\sqrt\beta\,z+\sqrt\alpha\,\varepsilon_r
+  \quad\Longrightarrow\quad
+  a_r=\mathbf 1\big[\varepsilon_r>-\nueff z\big],
+  \qquad
+  q(z)=\Phibar(\nueff z).
+  \label{eq:onefactor}
+\end{equation}
+Conditionally on $z$ the $a_r$ are i.i.d.\ Bernoulli$(q)$, so $A$ is exchangeable:
+\begin{equation}
+  \PP(A=a)=\Pi_k=\EE_z\big[q^k(1-q)^{R-k}\big],
+  \qquad
+  \PP(K=k)=\binom{R}{k}\Pi_k,
+  \qquad k=\textstyle\sum_r a_r
+  \label{eq:PK}
+\end{equation}
+\begin{equation}
+  \boxed{\;
+  \mathrm{MI}=H(A)=H(K)+\EE\!\left[\log_2\binom{R}{K}\right]
+  = R\,\eta(\nueff)+I(A;q),
+  \qquad
+  \eta(\nu)\equiv\EE_z\big[\htwo\big(\Phibar(\nu z)\big)\big] \;}
+  \label{eq:MI}
+\end{equation}
+with $I(A;q)\simeq\tfrac12\log_2R$ at fixed $\nueff$, $R\to\infty$. Limits of $\eta$:
+\begin{equation}
+  \eta(\nu)=1-\frac{\nu^2}{\pi\ln2}+O(\nu^4),
+  \qquad
+  \eta(1)=\frac{1}{2\ln2}=0.7213,
+  \qquad
+  \eta(\nu)\simeq\frac{1.0397}{\nu}\ \ (\nu\gg1).
+  \label{eq:etalimits}
+\end{equation}
+
+\section{Results}
+
+\begin{equation}
+  \boxed{\;
+  \mathrm{MI}\simeq R\,\eta(\nueff)+\tfrac12\log_2R,
+  \qquad
+  \nueff^2=\max\!\left(0,\frac{\nu_{\min}^2(R-1)-1}{R}\right),
+  \qquad
+  \nu_{\min}^2=\frac{\rho^2}{\Lambda} \;}
+\end{equation}
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Conformation & \\
+\midrule
+norm & $U_\star=\lambda\sqrt{(1+\Lambda)/2}\simeq\lambda\sqrt{\ln\Gamma}$, equal for all $r$ \\
+directions & $\sum_r\uhat_r=0$, $\ \cos\theta_{rr'}=-\min(\nu^2,1/(R-1))$ \\
+valid while & $R\le D+1$ \\
+\midrule
+Regimes in $\nueff$ & \\
+\midrule
+$\nueff=0$, i.e.\ $R\le1+1/\nu^2$ & $\mathrm{MI}=R$ exactly \\
+$\nueff\lesssim1$ & $\mathrm{MI}\simeq R\big(1-0.459\,\nueff^2\big)$ \\
+$1\lesssim\nueff\lesssim R/\log_2R$ & $\mathrm{MI}\simeq 1.04\,R/\nueff+\tfrac12\log_2R$ \\
+$\nueff\gtrsim R/\log_2R$ & $\mathrm{MI}=O(\log_2R)$ \\
+\midrule
+Equal norms optimal iff & $\nueff<1$, i.e.\ $\nu<\sqrt{(R+1)/(R-1)}$; above, a radial ladder \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\end{document}

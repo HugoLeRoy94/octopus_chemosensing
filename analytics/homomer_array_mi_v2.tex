@@ -1,0 +1,676 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{longtable}
+\usepackage[colorlinks=true,linkcolor=blue]{hyperref}
+
+\newcommand{\RR}{\mathbb{R}}
+\newcommand{\EE}{\mathbb{E}}
+\newcommand{\PP}{\mathbb{P}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\Cov}{\mathrm{Cov}}
+\newcommand{\sd}{\mathrm{sd}}
+\newcommand{\Ebase}{E_{\mathrm{base}}}
+\newcommand{\Emax}{E_{\mathrm{max}}}
+\newcommand{\uhat}{\hat{u}}
+\newcommand{\nueff}{\nu_{\mathrm{eff}}}
+\newcommand{\one}{\mathbf{1}}
+
+\setlist{itemsep=2pt,topsep=4pt}
+
+\title{Mutual information of a homomer receptor array\\
+in a single-family chemical environment}
+\author{Analytical baseline for the octopus chemosensation project}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{Notation}
+
+Vectors are in $\RR^D$, $\|\cdot\|$ is the Euclidean norm and $\cdot$ the scalar product.
+$\EE$, $\PP$, $\Var$, $\Cov$, $\sd$ are expectation, probability, variance, covariance and
+standard deviation. $\one[\cdot]$ equals $1$ when its argument holds and $0$ otherwise.
+``iff'' means if and only if. $H$ is the entropy and $I(\cdot\,;\cdot)$ the mutual
+information (MI), both in bits.
+
+{\small
+\begin{longtable}{@{}l p{12cm}@{}}
+\toprule
+\multicolumn{2}{@{}l}{\emph{Environment}}\\
+$D$ & dimension of the chemical latent space\\
+$l\in\RR^D$ & latent position of the ligand presented in a sniff\\
+$\sigma$ & standard deviation of each coordinate of $l$\\
+$c$, $s=\ln c$ & concentration and log-concentration of the ligand\\
+$m$, $\sigma_c$ & mean and standard deviation of $s$\\
+\midrule
+\multicolumn{2}{@{}l}{\emph{Receptors}}\\
+$R$ & number of receptors\\
+$u_r\in\RR^D$ & latent position of receptor $r$\\
+$U_r=\|u_r\|$ & norm of $u_r$, written $U$ when all norms are equal\\
+$\uhat_r=u_r/U_r$ & direction of $u_r$\\
+$\kappa=\uhat_r\cdot\uhat_{r'}$ & cosine between two directions, the same for all pairs $r\neq r'$\\
+$\lambda$ & length scale of the Gaussian affinity kernel\\
+$\Ebase$, $\Emax$ & baseline energy and selectivity ceiling, shared by all receptors\\
+$EC_{50}$ & half-activation concentration\\
+$a_r\in\{0,1\}$ & activity of receptor $r$\\
+$A=(a_1,\dots,a_R)$ & activity pattern\\
+$K=\sum_r a_r$ & number of active receptors, $k$ its values\\
+\midrule
+\multicolumn{2}{@{}l}{\emph{Derived quantities}}\\
+$B(s)$ & squared radius of the receptive field, Eq.~\eqref{eq:ball}\\
+$p_r=\uhat_r\cdot l$ & projection of the ligand on the direction of receptor $r$\\
+$\tau_r$, $\tau$ & threshold of receptor $r$ on $p_r$, Eq.~\eqref{eq:threshold}, and its common value for equal norms\\
+$\nu=\sd(\tau)/\sigma$ & strength of the common mode, Eq.~\eqref{eq:nu}\\
+$\nueff$ & effective strength of the common mode, Eq.~\eqref{eq:nueff}\\
+$x_r$ & firing variable, receptor $r$ is active iff $x_r>0$, Eq.~\eqref{eq:x}\\
+$z$, $\varepsilon_r$ & shared and private standard normal factors, Eq.~\eqref{eq:onefactor}\\
+$q(z)$ & firing probability of any receptor given $z$\\
+$\Pi_k$ & probability of one given pattern with $k$ active receptors\\
+$\rho=\sigma\sqrt D/\lambda$ & typical ligand distance to the family centre, in units of $\lambda$\\
+$\Gamma=\Emax/\sigma_c$ & selectivity ceiling in units of the concentration spread\\
+$U_\star$, $\Lambda$, $\nu_{\min}$ & optimal norm, the number that fixes it, and $\nu$ at $U_\star$, Eq.~\eqref{eq:Ustar}\\
+$\Ebase^\star$, $\kappa_\star$ & optimal baseline and optimal cosine, Eqs.~\eqref{eq:Ebase} and~\eqref{eq:kstar}\\
+\midrule
+\multicolumn{2}{@{}l}{\emph{Functions}}\\
+$\varphi$, $\Phi$ & standard normal density and cumulative distribution function\\
+$W$ & Lambert function, the inverse of $x\mapsto xe^x$ on $x\ge0$\\
+\bottomrule
+\end{longtable}
+}
+
+%=====================================================================
+\section{Model}
+\label{sec:model}
+
+\paragraph{Environment.} One chemical family, centred at the origin. A sniff presents one
+ligand at one concentration,
+\begin{equation}
+  l\sim\mathcal N(0,\sigma^2 I_D),
+  \qquad
+  s\sim\mathcal N(m,\sigma_c^2),
+  \qquad
+  s\ \text{independent of}\ l .
+  \label{eq:env}
+\end{equation}
+
+\paragraph{Receptors.} The half-activation concentration of receptor $r$ for ligand $l$
+follows the Gaussian affinity kernel (simulator option \texttt{affinity\_kernel="gaussian"}),
+\begin{equation}
+  \ln EC_{50}(r,l)=\Ebase+\Emax\Big(1-e^{-\|l-u_r\|^2/\lambda^2}\Big).
+  \label{eq:kernel}
+\end{equation}
+It rises from $\Ebase$ for a perfectly matched ligand, $l=u_r$, to the ceiling
+$\Ebase+\Emax$ for a distant one. $\Ebase$ and $\Emax>0$ are learnable and shared by the
+array (\texttt{shared\_unit\_energies}), so the position $u_r$ is the only per-receptor
+parameter.
+
+\paragraph{Readout.} A receptor is active when the concentration exceeds its $EC_{50}$,
+\begin{equation}
+  a_r=\one\big[s>\ln EC_{50}(r,l)\big],
+  \label{eq:readout}
+\end{equation}
+the zero-temperature limit of the sigmoid readout of the simulator. The map
+$(l,s)\mapsto A$ is deterministic, so $H(A\mid l,s)=0$ and
+\begin{equation}
+  \mathrm{MI}=I\big(A;(l,s)\big)=H(A).
+  \label{eq:MI}
+\end{equation}
+
+\subsection{Geometric form of the firing rule}
+
+\paragraph{The receptive field is a ball.} Solving \eqref{eq:readout} for the distance
+(Appendix~\ref{app:ball}),
+\begin{equation}
+  a_r=\one\big[\|l-u_r\|^2<B(s)\big],
+  \qquad
+  B(s)=-\lambda^2\ln\Big(1-\frac{s-\Ebase}{\Emax}\Big).
+  \label{eq:ball}
+\end{equation}
+$B(s)$ is the squared radius of the receptive field. It grows with the concentration and
+is the same for every receptor.
+
+\paragraph{Private signal against a shared threshold.} Expand
+$\|l-u_r\|^2=\|l\|^2-2U_r\,p_r+U_r^2$, with $p_r=\uhat_r\cdot l$. Then \eqref{eq:ball}
+becomes
+\begin{equation}
+  a_r=\one\big[p_r>\tau_r\big],
+  \qquad
+  \tau_r=\frac{\|l\|^2-B(s)+U_r^2}{2U_r}.
+  \label{eq:threshold}
+\end{equation}
+The projection $p_r$ is private: it depends on the direction of receptor $r$. The
+threshold depends on the stimulus only through the scalar $\|l\|^2-B(s)$, seen identically
+by every receptor. Its fluctuation is the \emph{common mode}. The distance of the ligand to
+the family centre and its concentration enter it in the same way, so for the array they are
+the same noise.
+
+%=====================================================================
+\section{The optimal array is a regular simplex}
+\label{sec:simplex}
+
+\paragraph{Symmetric design.} We look for the best array among symmetric ones: every
+receptor has the same norm $U$, every pair of directions has the same cosine $\kappa$, and
+every receptor is active with probability $1/2$ (balance). With shared energies, balance
+forces equal norms, because the firing probability of a receptor depends on $u_r$ only
+through $U_r$ and decreases with it (Appendix~\ref{app:norm}). The thresholds
+\eqref{eq:threshold} then coincide,
+\begin{equation}
+  a_r=\one[p_r>\tau],
+  \qquad
+  \tau=\frac{\|l\|^2-B(s)+U^2}{2U},
+  \label{eq:tau}
+\end{equation}
+and two numbers describe the array,
+\begin{equation}
+  \nu=\frac{\sd(\tau)}{\sigma},
+  \qquad
+  \kappa=\uhat_r\cdot\uhat_{r'}\quad(r\neq r').
+  \label{eq:nu}
+\end{equation}
+$\nu$ compares the common mode, which shifts all thresholds together, with the private
+signal, whose standard deviation is $\sd(p_r)=\sigma$. It depends on the norm $U$ and not on
+the directions. $\kappa$ depends on the directions only.
+
+\paragraph{Result.} The best symmetric array places every receptor at the distance
+$U_\star$ of Eq.~\eqref{eq:Ustar} from the family centre, with the pairwise cosine
+$\kappa_\star$ of Eq.~\eqref{eq:kstar}. The receptor positions are then the vertices of a
+regular simplex. When the common mode is too strong to be cancelled,
+$\kappa_\star=-1/(R-1)$ and the simplex is centred on the family. When it can be
+cancelled, the array delivers exactly $R$ bits and the norm is not unique
+(Section~\ref{sec:angle}).
+
+\paragraph{Logic.}
+\begin{enumerate}[label=(\alph*)]
+\item \emph{One shared factor} (Section~\ref{sec:law}). Treat $\tau$ as Gaussian and
+  independent of the projections. The receptors are then independent given a single shared
+  Gaussian factor, and the law of $A$ depends on the array and the environment only
+  through $R$ and
+  \begin{equation*}
+    \nueff^2=\frac{\kappa+\nu^2}{1-\kappa}.
+  \end{equation*}
+  $H(A)=R$ bits at $\nueff=0$, and $H(A)$ decreases strictly with $\nueff$. Optimizing the
+  array means minimizing $\nueff$.
+\item \emph{Norm} (Section~\ref{sec:norm}). $\nueff$ increases with $\nu$, and at given
+  $\Emax$ the norm $U$ is the only design parameter that sets $\nu$. So $U$ minimizes $\nu$. A longer $u_r$
+  strengthens the private signal, but with the Gaussian kernel it also amplifies the
+  concentration noise exponentially. The compromise is $U_\star$.
+\item \emph{Angles} (Section~\ref{sec:angle}). $\nueff$ increases with $\kappa$, so the
+  directions spread apart until $\kappa=-\nu^2$, where $\nueff=0$, or until the geometric
+  floor $\kappa=-1/(R-1)$, where they sum to zero.
+\item \emph{MI} (Section~\ref{sec:mi}). With $U$ and $\kappa$ fixed, $H(A)$ is a sum of
+  $R+1$ terms, each containing a one-dimensional integral.
+\end{enumerate}
+Section~\ref{sec:law} comes before the norm and the angles because both are chosen by
+minimizing $\nueff$, which is defined there.
+
+\paragraph{Validity regime.}
+\begin{enumerate}[label=(\roman*)]
+\item $R\le D$, so that $R$ directions with a common cosine fit in $\RR^D$
+  (Appendix~\ref{app:geom}). $R=D+1$ is possible only at the floor $\kappa=-1/(R-1)$.
+  Section~\ref{sec:corner} treats $R>D+1$.
+\item Large $D$. $\tau$ is treated as Gaussian and independent of the projections.
+  $\|l\|^2$ is a sum of $D$ squares, close to Gaussian at large $D$. It contains $p_r^2$,
+  which ties $\tau$ to $p_r$, but this term carries at most a fraction $1/D$ of $\Var(\tau)$
+  (Appendix~\ref{app:indep}).
+\item Weak concentration noise on the field. $B(s)$ is linearized around $s=m$. This
+  requires $\sd(B)\ll\lambda^2$, equivalently $\sigma_c\ll\Ebase+\Emax-m$, the gap between
+  the typical log-concentration and the ceiling (Appendix~\ref{app:lin}). At the optimum
+  the condition is Eq.~\eqref{eq:valid}.
+\item Symmetric design. In the lossless window $\nu_{\min}^2\le1/(R-1)$
+  (Section~\ref{sec:angle}) it gives $R$ bits, the maximum for $R$ binary receptors, so no
+  array does better. Outside the window it is an ansatz. In particular, when the common
+  mode dominates ($\nu\gg1$) identical receptors fire all together, and arrays with
+  unequal norms, hence staggered thresholds, do better. This is not treated here.
+\item $\Emax$ is given. Increasing it lowers $\nu_{\min}$, so an array that also optimizes
+  $\Emax$ keeps increasing it while $\nu_{\min}^2>1/(R-1)$ (Section~\ref{sec:norm}).
+\end{enumerate}
+
+%=====================================================================
+\section{Conditional law of the pattern}
+\label{sec:law}
+
+Take the symmetric design \eqref{eq:tau} and treat $\tau$ as a Gaussian variable,
+independent of the projections, with $\EE[\tau]=0$ (balance) and $\sd(\tau)=\nu\sigma$.
+For $l\sim\mathcal N(0,\sigma^2I_D)$ the projections are jointly Gaussian and centred, with
+\begin{equation}
+  \Var(p_r)=\sigma^2,
+  \qquad
+  \Cov(p_r,p_{r'})=\sigma^2\,\uhat_r\cdot\uhat_{r'}=\sigma^2\kappa .
+  \label{eq:gram}
+\end{equation}
+
+\paragraph{One shared factor.} Receptor $r$ is active iff
+\begin{equation}
+  x_r\equiv\frac{p_r-\tau}{\sigma}>0 .
+  \label{eq:x}
+\end{equation}
+The $x_r$ are jointly Gaussian and centred, with
+\begin{equation}
+  \Var(x_r)=1+\nu^2,
+  \qquad
+  \Cov(x_r,x_{r'})=\kappa+\nu^2 .
+  \label{eq:covx}
+\end{equation}
+All variances are equal and all covariances are equal. For $\kappa+\nu^2\ge0$ these are
+exactly the moments of
+\begin{equation}
+  x_r=\sqrt{\kappa+\nu^2}\;z+\sqrt{1-\kappa}\;\varepsilon_r,
+  \label{eq:onefactor}
+\end{equation}
+with $z,\varepsilon_1,\dots,\varepsilon_R$ independent standard normals. $z$ is the part
+of the common mode that the directions have not cancelled. Dividing $x_r>0$ by
+$\sqrt{1-\kappa}$,
+\begin{equation}
+  \boxed{\;a_r=\one\big[\varepsilon_r>-\nueff\,z\big],
+  \qquad
+  \nueff^2=\frac{\kappa+\nu^2}{1-\kappa}.\;}
+  \label{eq:nueff}
+\end{equation}
+The case $\kappa+\nu^2<0$ is never optimal (Section~\ref{sec:angle}).
+
+\paragraph{Conditional law.} Given $z$, each $a_r$ is a function of its own
+$\varepsilon_r$, so the receptors are independent, each active with probability
+\begin{equation}
+  q(z)=\PP(\varepsilon_r>-\nueff z)=\Phi(\nueff z).
+  \label{eq:q}
+\end{equation}
+A pattern $a\in\{0,1\}^R$ with $k$ active receptors has conditional probability
+$q^k(1-q)^{R-k}$, which depends on $a$ only through $k$.
+
+\paragraph{Average over the factor.} Using $1-\Phi(x)=\Phi(-x)$,
+\begin{equation}
+  \boxed{\;\PP(A=a)=\Pi_k\equiv\int_{-\infty}^{\infty}\varphi(z)\,
+  \Phi(\nueff z)^k\,\Phi(-\nueff z)^{R-k}\,\mathrm dz,
+  \qquad k=\textstyle\sum_r a_r .\;}
+  \label{eq:Pi}
+\end{equation}
+
+\paragraph{Consequences.}
+\begin{enumerate}
+\item The law of $A$, hence the MI, depends on the array and the environment only through
+  $R$ and $\nueff$.
+\item At $\nueff=0$, $q=1/2$ and $\Pi_k=2^{-R}$. The receptors are independent fair coins
+  and $H(A)=R$ bits, the maximum.
+\item $H(A)$ decreases strictly with $\nueff$ (Appendix~\ref{app:mono}).
+\item $\nueff$ increases with $\nu$ at fixed $\kappa$, and with $\kappa$ at fixed $\nu$,
+  since $\partial_\kappa\nueff^2=(1+\nu^2)/(1-\kappa)^2>0$.
+\end{enumerate}
+The best array therefore minimizes $\nu$ through its norm (Section~\ref{sec:norm}) and
+$\kappa$ through its directions (Section~\ref{sec:angle}).
+
+%=====================================================================
+\section{What fixes the norm}
+\label{sec:norm}
+
+\paragraph{Balance fixes the baseline, not the norm.} Since $\EE\|l\|^2=D\sigma^2$, the
+condition $\EE[\tau]=0$ reads
+\begin{equation}
+  \EE[B(s)]=D\sigma^2+U^2 .
+  \label{eq:balance}
+\end{equation}
+The mean squared radius of the field equals the mean squared distance from the receptor to
+a ligand, $\EE\|l-u_r\|^2$. For any $U$ the learnable $\Ebase$ can satisfy
+\eqref{eq:balance}. Balanced arrays thus form a family labelled by $U$, and another
+criterion picks $U$.
+
+\paragraph{The norm minimizes $\nu$.} Multiply the firing condition by $2U$:
+$2U p_r>\|l\|^2-B(s)+U^2$. The private signal $2Up_r$ has variance $4U^2\sigma^2$. The
+shared noise $\|l\|^2-B(s)$ has variance $\Var(\|l\|^2)+\Var(B)$, since $l$ and $s$ are
+independent. Hence
+\begin{equation}
+  \nu^2=\frac{\Var(\|l\|^2)+\Var(B)}{4\sigma^2U^2},
+  \qquad
+  \Var(\|l\|^2)=2D\sigma^4 .
+  \label{eq:nu2}
+\end{equation}
+The radial noise $\Var(\|l\|^2)$ does not depend on $U$, so moving the receptor away
+lengthens the lever arm against it. The concentration noise $\Var(B)$ grows with $U$. By
+\eqref{eq:balance} a more distant receptor needs a larger field. The Gaussian kernel
+saturates at $\Ebase+\Emax$, so a large field requires the typical log-concentration $m$ to
+sit close to this ceiling, where $B(s)$ diverges and the fluctuations of $s$ are strongly
+amplified. Linearizing $B$ around $m$ (Appendix~\ref{app:lin}),
+\begin{equation}
+  \sd(B)=\frac{\lambda^2}{\Gamma}\,e^{\rho^2+U^2/\lambda^2},
+  \label{eq:sdB}
+\end{equation}
+which grows exponentially with $U^2$. Together,
+\begin{equation}
+  \boxed{\;\nu^2(U)=\frac{2D\sigma^4+\dfrac{\lambda^4}{\Gamma^2}\,e^{2\rho^2+2U^2/\lambda^2}}
+  {4\sigma^2U^2}.\;}
+  \label{eq:nuU}
+\end{equation}
+$\nu^2$ diverges at small $U$ (no lever arm) and at large $U$ (concentration noise), with a
+single minimum in between.
+
+\paragraph{Optimal norm.} Setting $\mathrm d\nu^2/\mathrm dU=0$ gives
+\begin{equation}
+  \Var(B)\Big(\frac{2U^2}{\lambda^2}-1\Big)=\Var(\|l\|^2),
+  \label{eq:stationary}
+\end{equation}
+which the Lambert function solves (Appendix~\ref{app:lambert}):
+\begin{equation}
+  \boxed{\;U_\star^2=\frac{\lambda^2}{2}\,(1+\Lambda),
+  \qquad
+  \Lambda=W\Big(\frac{2\rho^4\Gamma^2}{D}\,e^{-2\rho^2-1}\Big),
+  \qquad
+  \nu_{\min}^2=\nu^2(U_\star)=\frac{\rho^2}{\Lambda}.\;}
+  \label{eq:Ustar}
+\end{equation}
+At the optimum the concentration noise is $\Var(B)=\Var(\|l\|^2)/\Lambda$. Balance then
+fixes the baseline,
+\begin{equation}
+  \Ebase^\star=m-\Emax\Big(1-e^{-\rho^2-U_\star^2/\lambda^2}\Big).
+  \label{eq:Ebase}
+\end{equation}
+The mean log-concentration $m$ enters only $\Ebase^\star$. It affects neither $\nu_{\min}$
+nor the MI.
+$\Emax$ is taken as given. $\Lambda$ increases with $\Gamma$, so $\nu_{\min}$ decreases with
+$\Emax$. Nothing in the model penalizes a large $\Emax$.
+
+\paragraph{Validity.} The linearization needs $\sd(B)\ll\lambda^2$. At the optimum
+(Appendix~\ref{app:lambert}),
+\begin{equation}
+  \frac{\sd(B)}{\lambda^2}\bigg|_{U_\star}=\sqrt{\frac{2\rho^4}{D\Lambda}}\;\ll\;1 .
+  \label{eq:valid}
+\end{equation}
+It fails when the ligand cloud is wide compared with the kernel range (large $\rho$).
+
+\paragraph{Why the Gaussian kernel matters.} With the quadratic kernel,
+$\ln EC_{50}=\Ebase+dE\,\|l-u_r\|^2$ with slope $dE$, the field $B(s)=(s-\Ebase)/dE$ is
+linear in $s$ and $\Var(B)=\sigma_c^2/dE^2$ does not depend on $U$. Then $\nu\to0$ as
+$U\to\infty$ and nothing fixes the norm. The finite $U_\star$ comes from the saturation of
+the Gaussian kernel.
+
+%=====================================================================
+\section{What fixes the angles}
+\label{sec:angle}
+
+\paragraph{Target.} The common mode shifts all thresholds together and correlates the
+receptors positively. Directions with a negative cosine correlate the projections
+negatively, Eq.~\eqref{eq:gram}. The two contributions add in \eqref{eq:covx}. At
+$\kappa=-\nu^2$ they cancel: $\Cov(x_r,x_{r'})=0$, the receptors are independent and
+$H(A)=R$. Below $-\nu^2$ the receptors are anti-correlated, hence dependent, and
+$H(A)<R$. Above it, $H(A)$ decreases with $\kappa$ (Section~\ref{sec:law}). So $\kappa$
+should be as close to $-\nu^2$ as geometry allows.
+
+\paragraph{Geometric floor.} For any $R$ unit vectors, in any dimension,
+\begin{equation}
+  0\le\Big\|\sum_{r=1}^R\uhat_r\Big\|^2=R+R(R-1)\,\kappa
+  \quad\Longrightarrow\quad
+  \kappa\ge-\frac{1}{R-1},
+  \label{eq:floor}
+\end{equation}
+with equality iff $\sum_r\uhat_r=0$.
+
+\paragraph{Optimal angle.}
+\begin{equation}
+  \boxed{\;\kappa_\star=-\min\Big(\nu^2,\ \frac{1}{R-1}\Big),
+  \qquad
+  \nueff^2\big|_{\kappa_\star}=\max\Big(0,\ \frac{\nu^2(R-1)-1}{R}\Big),\;}
+  \label{eq:kstar}
+\end{equation}
+to be evaluated at $\nu=\nu_{\min}$. Two cases.
+\begin{itemize}
+\item \emph{Lossless window}, $\nu_{\min}^2\le1/(R-1)$, that is $R\le1+1/\nu_{\min}^2$.
+  The common mode is cancelled exactly and $H(A)=R$. The optimum is degenerate: every $U$
+  with $\nu(U)^2\le1/(R-1)$, combined with $\kappa=-\nu(U)^2$, also gives $R$ bits.
+\item \emph{Floor}, $\nu_{\min}^2>1/(R-1)$. Both $U=U_\star$ and $\kappa=-1/(R-1)$ are
+  fixed, $\nueff>0$ and $H(A)<R$.
+\end{itemize}
+
+\paragraph{The positions form a regular simplex.} All pairwise distances are equal,
+$\|u_r-u_{r'}\|^2=2U^2(1-\kappa)$, so the receptor positions are the vertices of a regular
+simplex. Its centre lies at distance $U\sqrt{(1+(R-1)\kappa)/R}$ from the family centre,
+which vanishes at the floor. The configuration exists in $\RR^D$ iff $R\le D$, or
+$R\le D+1$ at the floor (Appendix~\ref{app:geom}).
+
+%=====================================================================
+\section{The mutual information}
+\label{sec:mi}
+
+\paragraph{Formula.} By \eqref{eq:Pi} the $2^R$ patterns split into $R+1$ classes, the
+$\binom Rk$ patterns with $k$ active receptors sharing the probability $\Pi_k$. Hence
+\begin{equation}
+  \mathrm{MI}=H(A)=-\sum_{k=0}^{R}\binom Rk\,\Pi_k\log_2\Pi_k .
+  \label{eq:H}
+\end{equation}
+Equivalently, with $\PP(K=k)=\binom Rk\Pi_k$,
+$H(A)=H(K)+\EE\big[\log_2\binom RK\big]$: the information in how many receptors fire, plus
+the information in which ones, given how many.
+
+\paragraph{Full result.} Collecting \eqref{eq:Pi}, \eqref{eq:Ustar}, \eqref{eq:kstar}
+and \eqref{eq:H},
+\begin{equation}
+  \boxed{\;
+  \begin{aligned}
+    \mathrm{MI}&=-\sum_{k=0}^{R}\binom Rk\,\Pi_k\log_2\Pi_k,
+    &\Pi_k&=\int_{-\infty}^{\infty}\varphi(z)\,\Phi(\nueff z)^k\,\Phi(-\nueff z)^{R-k}\,\mathrm dz,\\
+    \nueff^2&=\max\Big(0,\ \frac{(R-1)\rho^2/\Lambda-1}{R}\Big),
+    &\Lambda&=W\Big(\frac{2\rho^4\Gamma^2}{D}\,e^{-2\rho^2-1}\Big).
+  \end{aligned}\;}
+  \label{eq:result}
+\end{equation}
+The MI depends on the environment and the kernel only through $\rho$, $\Gamma$ and $D$, and
+on the array through $R$.
+
+\paragraph{What is explicit and what is computed.}
+\begin{itemize}
+\item \emph{Explicit.} Everything up to $\nueff$ is in closed form: $\rho$, $\Gamma$,
+  $\Lambda$ (the Lambert function is a standard special function), $U_\star$,
+  $\Ebase^\star$, $\nu_{\min}$, $\kappa_\star$ and $\nueff$.
+\item \emph{Computed.} The $R+1$ numbers $\Pi_k$ are one-dimensional integrals of powers
+  of $\Phi$. They have no closed form in general and are evaluated by one-dimensional
+  quadrature, for example Gauss--Hermite. $H(A)$ is then a finite sum.
+\item \emph{Two exact points.} At $\nueff=0$, $H(A)=R$. At $\nueff=1$, $q=\Phi(z)$ is
+  uniform on $(0,1)$, so $\Pi_k=\int_0^1q^k(1-q)^{R-k}\,\mathrm dq=k!\,(R-k)!/(R+1)!$,
+  $K$ is uniform on $\{0,\dots,R\}$, and
+  $H(A)=\log_2(R+1)+\frac{1}{R+1}\sum_{k=0}^R\log_2\binom Rk$.
+\end{itemize}
+
+%=====================================================================
+\section{More receptors than dimensions, \texorpdfstring{$R>D+1$}{R>D+1}}
+\label{sec:corner}
+
+\paragraph{The symmetric design no longer exists.} The floor \eqref{eq:floor} holds in any
+dimension and can still be reached, $\sum_r\uhat_r=0$, but $R$ directions with a common
+cosine need $D\ge R-1$ (Appendix~\ref{app:geom}). For $R>D+1$ the cosines must differ. If
+the array keeps $\sum_r\uhat_r=0$, its cosines spread around the mean $-1/(R-1)$. With
+unequal covariances in \eqref{eq:covx} there is no single shared factor, the reduction of
+Section~\ref{sec:law} is lost, and the directions add a redundancy of their own,
+independent of $\nu$.
+
+\paragraph{Counting bound.} The condition $\|l-u_r\|^2<B(s)$ reads $t-2u_r\cdot l+U_r^2<0$
+with $t=\|l\|^2-B(s)$. It is linear in $(l,t)\in\RR^{D+1}$, so the pattern only records on
+which side of $R$ hyperplanes the point $(l,t)$ lies. $R$ hyperplanes cut $\RR^{D+1}$ into
+at most $\sum_{i=0}^{D+1}\binom Ri\le(R+1)^{D+1}$ regions. Hence, for any array with shared
+energies, whatever its norms and directions,
+\begin{equation}
+  H(A)\;\le\;\log_2\sum_{i=0}^{D+1}\binom Ri\;\le\;(D+1)\log_2(R+1).
+  \label{eq:count}
+\end{equation}
+The first bound is below $R$ iff $R>D+1$. The second shows that for $R\gg D$ the MI grows
+at most logarithmically with $R$.
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+ & $\nu_{\min}^2\le1/(R-1)$ & $\nu_{\min}^2>1/(R-1)$ \\
+\midrule
+$R\le D$ & $R$ bits & Eq.~\eqref{eq:result}, below $R$ \\
+$R>D+1$ & \multicolumn{2}{c}{at most $(D+1)\log_2(R+1)$ bits} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+%=====================================================================
+\appendix
+
+\section{The receptive field is a ball}
+\label{app:ball}
+
+By \eqref{eq:kernel} and \eqref{eq:readout},
+\begin{equation*}
+  a_r=1
+  \iff s>\Ebase+\Emax\Big(1-e^{-\|l-u_r\|^2/\lambda^2}\Big)
+  \iff e^{-\|l-u_r\|^2/\lambda^2}>1-\frac{s-\Ebase}{\Emax}.
+\end{equation*}
+The left side lies in $(0,1]$. Three cases follow.
+\begin{itemize}
+\item $s\le\Ebase$. The right side is at least $1$ and the receptor never fires. This
+  agrees with \eqref{eq:ball}, where then $B(s)\le0$.
+\item $\Ebase<s<\Ebase+\Emax$. The right side lies in $(0,1)$. Taking the logarithm gives
+  $\|l-u_r\|^2<B(s)$, with $B(s)>0$.
+\item $s\ge\Ebase+\Emax$. The right side is at most $0$ and the receptor fires for every
+  ligand. Set $B(s)=+\infty$.
+\end{itemize}
+The last case is concentration saturation. Its probability,
+$\Phi\big(-(\Ebase+\Emax-m)/\sigma_c\big)$, is negligible under condition (iii) of
+Section~\ref{sec:simplex}.
+
+\section{The threshold}
+\label{app:moments}
+
+\subsection{Firing probability and norm}
+\label{app:norm}
+
+$\|l-u_r\|^2/\sigma^2$ follows a noncentral chi-square law with $D$ degrees of freedom and
+noncentrality $U_r^2/\sigma^2$. This law depends on $u_r$ only through $U_r$, and it
+increases stochastically with $U_r$. As $s$ is independent of $l$,
+$\PP(a_r=1)=\PP\big(\|l-u_r\|^2<B(s)\big)$ depends on $u_r$ only through $U_r$ and
+decreases strictly with it. With shared energies, equal firing probabilities therefore
+require equal norms.
+
+\subsection{Moments}
+\label{app:mom}
+
+$\|l\|^2=\sum_{i=1}^D l_i^2$ with $l_i$ independent $\mathcal N(0,\sigma^2)$, so
+$\EE\|l\|^2=D\sigma^2$ and $\Var(\|l\|^2)=2D\sigma^4$. Its skewness, $\sqrt{8/D}$, vanishes
+at large $D$, where $\|l\|^2$ is close to Gaussian. With $l$ independent of $s$,
+Eq.~\eqref{eq:tau} gives
+\begin{equation*}
+  \EE[\tau]=\frac{D\sigma^2-\EE[B]+U^2}{2U},
+  \qquad
+  \Var(\tau)=\frac{2D\sigma^4+\Var(B)}{4U^2}.
+\end{equation*}
+
+\subsection{Linearization of \texorpdfstring{$B$}{B}}
+\label{app:lin}
+
+From \eqref{eq:ball},
+\begin{equation*}
+  B'(s)=\frac{\lambda^2}{\Ebase+\Emax-s}=\frac{\lambda^2}{\Emax}\,e^{B(s)/\lambda^2},
+  \qquad
+  B''(s)=\frac{B'(s)^2}{\lambda^2}.
+\end{equation*}
+Over a range $\sigma_c$ of $s$ the slope changes by the relative amount
+$\sigma_c B''/B'=\sigma_c B'/\lambda^2$. The linearization
+$B(s)\simeq B(m)+B'(m)(s-m)$ thus holds when $\sigma_c B'(m)\ll\lambda^2$. $B$ is then
+Gaussian with $\EE[B]=B(m)$ and $\sd(B)=\sigma_c B'(m)$, so the condition is
+$\sd(B)\ll\lambda^2$, or equivalently $\sigma_c\ll\Ebase+\Emax-m$. Balance
+\eqref{eq:balance} sets $B(m)=D\sigma^2+U^2$, which gives \eqref{eq:Ebase} and
+\begin{equation*}
+  \sd(B)=\frac{\sigma_c\lambda^2}{\Emax}\,e^{(D\sigma^2+U^2)/\lambda^2}
+  =\frac{\lambda^2}{\Gamma}\,e^{\rho^2+U^2/\lambda^2}.
+\end{equation*}
+
+\subsection{Dependence of \texorpdfstring{$\tau$}{tau} on the projections}
+\label{app:indep}
+
+Split $l$ along $\uhat_r$ and its orthogonal complement:
+$\|l\|^2=p_r^2+\|l-p_r\uhat_r\|^2$. For isotropic Gaussian $l$ the second term is
+independent of $p_r$. So $\tau$ depends on $p_r$ only through $p_r^2$, whose share of the
+variance of the shared noise is
+\begin{equation*}
+  \frac{\Var(p_r^2)}{\Var(\|l\|^2)+\Var(B)}=\frac{2\sigma^4}{2D\sigma^4+\Var(B)}\le\frac1D .
+\end{equation*}
+The main text neglects this term. The resulting error on $H(A)$ is not quantified here.
+
+\section{Minimizing \texorpdfstring{$\nu$}{nu} over the norm}
+\label{app:lambert}
+
+Write $w=U^2/\lambda^2$, $V_l=\Var(\|l\|^2)=2D\sigma^4$ and
+$V_B(w)=\Var(B)=(\lambda^4/\Gamma^2)\,e^{2\rho^2+2w}$, Eq.~\eqref{eq:sdB}. Then
+Eq.~\eqref{eq:nu2} reads $\nu^2=(V_l+V_B)/(4\sigma^2\lambda^2w)$. Since
+$\mathrm dV_B/\mathrm dw=2V_B$,
+\begin{equation*}
+  \frac{\mathrm d}{\mathrm dw}\,\frac{V_l+V_B}{w}=\frac{V_B\,(2w-1)-V_l}{w^2}.
+\end{equation*}
+The numerator is negative for $w\le1/2$ and increasing for $w>1/2$, so it vanishes once, at
+the minimum, where $V_B(2w-1)=V_l$. This is \eqref{eq:stationary}. Put $\Lambda=2w-1>0$.
+Then $V_B=(\lambda^4/\Gamma^2)\,e^{2\rho^2+1+\Lambda}$ and, with $\sigma^2=\rho^2\lambda^2/D$,
+\begin{equation*}
+  \Lambda e^{\Lambda}=\frac{V_l\,\Gamma^2}{\lambda^4}\,e^{-2\rho^2-1}
+  =\frac{2\rho^4\Gamma^2}{D}\,e^{-2\rho^2-1}.
+\end{equation*}
+The right side is positive, so $\Lambda=W(\cdot)>0$ is unique and
+$U_\star^2=\lambda^2(1+\Lambda)/2$. At the optimum $V_B=V_l/\Lambda$, hence
+\begin{equation*}
+  \nu_{\min}^2=\frac{V_l\,(1+1/\Lambda)}{2\sigma^2\lambda^2(1+\Lambda)}
+  =\frac{V_l}{2\sigma^2\lambda^2\Lambda}=\frac{\rho^2}{\Lambda},
+  \qquad
+  \frac{\sd(B)}{\lambda^2}=\frac{\sqrt{V_l/\Lambda}}{\lambda^2}=\sqrt{\frac{2\rho^4}{D\Lambda}}.
+\end{equation*}
+
+\section{Geometry of the directions}
+\label{app:geom}
+
+\paragraph{Floor.} Expanding the square, using $\|\uhat_r\|=1$,
+$\|\sum_r\uhat_r\|^2=\sum_r\|\uhat_r\|^2+\sum_{r\neq r'}\uhat_r\cdot\uhat_{r'}=R+R(R-1)\kappa$.
+
+\paragraph{Existence.} The Gram matrix of $R$ unit vectors with common cosine $\kappa$ is
+$G=(1-\kappa)I+\kappa J$, with $I$ the identity and $J$ the all-ones $R\times R$ matrix. Its
+eigenvalues are $1-\kappa$, with multiplicity $R-1$ (vectors whose entries sum to zero), and
+$1+(R-1)\kappa$ (the all-ones vector). $R$ vectors with Gram matrix $G$ exist in $\RR^D$ iff
+$G$ is positive semidefinite with rank at most $D$. For $-1/(R-1)<\kappa<1$ the rank is $R$,
+and at $\kappa=-1/(R-1)$ it is $R-1$. Hence $R\le D$, or $R\le D+1$ at the floor.
+
+\paragraph{Simplex.} $\|u_r-u_{r'}\|^2=2U^2(1-\kappa)$ for every pair, so the positions are
+the vertices of a regular simplex. Its centre $\bar u=(U/R)\sum_r\uhat_r$ satisfies
+$\|\bar u\|^2=U^2(1+(R-1)\kappa)/R$ by the floor identity.
+
+\section{\texorpdfstring{$H(A)$}{H(A)} decreases with \texorpdfstring{$\nueff$}{nu\_eff}}
+\label{app:mono}
+
+Let $y_r=(\varepsilon_r+\nueff z)/\sqrt{1+\nueff^2}$. By \eqref{eq:nueff},
+$a_r=\one[y_r>0]$, and the $y_r$ are standard normals with common correlation
+$\nueff^2/(1+\nueff^2)$, which increases with $\nueff$. It suffices to show that $H(A)$
+decreases when this correlation increases. Write $C_{ij}$ for the correlation of $y_i$ and
+$y_j$, and $P_a$ for the probability of pattern $a$.
+
+\paragraph{Plackett's identity.} The Gaussian density $\varphi_C$ with correlation matrix
+$C$ satisfies $\partial\varphi_C/\partial C_{ij}=\partial^2\varphi_C/\partial y_i\partial y_j$
+for $i\neq j$. Integrating over the orthant $\{y_r>0$ if $a_r=1$, $y_r<0$ if $a_r=0\}$
+gives
+\begin{equation*}
+  \frac{\partial P_a}{\partial C_{ij}}=\pm\,\omega_{ij},
+\end{equation*}
+with the sign $+$ if $a_i=a_j$ and $-$ otherwise. Here $\omega_{ij}>0$ is the integral of
+$\varphi_C$ at $y_i=y_j=0$ over the other coordinates, restricted to their orthant, so it
+depends only on the activities of the other receptors.
+
+\paragraph{Entropy derivative.} Since $\sum_aP_a=1$,
+$\partial H/\partial C_{ij}=-\sum_a(\partial P_a/\partial C_{ij})\log_2P_a$. Fix the
+activities of the other receptors, with $n$ of them active. The four values of $(a_i,a_j)$
+have probabilities $\Pi_{n+2}$ (both active), $\Pi_n$ (both silent) and $\Pi_{n+1}$
+(twice). Hence
+\begin{equation*}
+  \frac{\partial H}{\partial C_{ij}}
+  =-\sum_{\text{other activities}}\omega_{ij}\,
+  \log_2\frac{\Pi_{n+2}\,\Pi_n}{\Pi_{n+1}^2}.
+\end{equation*}
+
+\paragraph{Log-convexity.} By the Cauchy--Schwarz inequality applied to \eqref{eq:Pi},
+\begin{equation*}
+  \Pi_{n+1}=\EE_z\big[q^{n+1}(1-q)^{R-n-1}\big]
+  \le\sqrt{\EE_z\big[q^n(1-q)^{R-n}\big]\,\EE_z\big[q^{n+2}(1-q)^{R-n-2}\big]}
+  =\sqrt{\Pi_n\Pi_{n+2}},
+\end{equation*}
+with equality only if $q(z)$ is constant, that is $\nueff=0$. For $\nueff>0$ every
+logarithm above is positive, so $\partial H/\partial C_{ij}<0$ for every pair and $H(A)$
+decreases strictly as the common correlation, hence $\nueff$, grows.
+
+\end{document}

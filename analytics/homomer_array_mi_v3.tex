@@ -1,0 +1,312 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage[colorlinks=true,linkcolor=blue]{hyperref}
+
+\newcommand{\RR}{\mathbb{R}}
+\newcommand{\EE}{\mathbb{E}}
+\newcommand{\PP}{\mathbb{P}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\Cov}{\mathrm{Cov}}
+\newcommand{\Ebase}{E_{\mathrm{base}}}
+\newcommand{\Emax}{E_{\mathrm{max}}}
+\newcommand{\uhat}{\hat{u}}
+\newcommand{\nueff}{\nu_{\mathrm{eff}}}
+\newcommand{\one}{\mathbf{1}}
+
+\title{Entropy of a homomer receptor array\\ in a single chemical family}
+\author{}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{Notation}
+
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+$D$ & dimension of the latent space\\
+$l\in\RR^D$ & ligand position, $l\sim\mathcal N(0,\sigma^2 I_D)$\\
+$s=\ln c$ & log-concentration, $s\sim\mathcal N(m,\sigma_c^2)$, independent of $l$\\
+$R$ & number of receptors\\
+$u_r=V_r\uhat_r$ & position of receptor $r$, with norm $V_r$ and unit direction $\uhat_r$\\
+$\kappa$ & common cosine $\uhat_r\cdot\uhat_{r'}$, $r\neq r'$\\
+$c^*_{rl}$ & half-activation concentration ($EC_{50}$) of receptor $r$ for ligand $l$\\
+$\lambda$, $\Ebase$, $\Emax$ & kernel length scale, baseline energy, selectivity ceiling\\
+$a_r\in\{0,1\}$, $A$ & activity of receptor $r$, pattern $A=(a_1,\dots,a_R)$\\
+$k$ & number of active receptors in a pattern\\
+$\varphi$, $\Phi$ & standard normal density and cumulative distribution function\\
+$H$ & entropy in bits, MI mutual information\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+%=====================================================================
+\section{Model}
+
+The half-activation concentration follows the Gaussian kernel, and a receptor is active
+when the concentration exceeds it:
+\begin{equation}
+  \ln c^*_{rl}=\Ebase+\Emax\Big(1-e^{-\|l-u_r\|^2/\lambda^2}\Big),
+  \qquad
+  a_r=\one\big[s>\ln c^*_{rl}\big].
+  \label{eq:model}
+\end{equation}
+$\Ebase$ and $\Emax$ are shared by all receptors. The map $(l,s)\mapsto A$ is
+deterministic, so $H(A\mid l,s)=0$ and
+\begin{equation}
+  \mathrm{MI}=I\big(A;(l,s)\big)=H(A).
+\end{equation}
+
+%=====================================================================
+\section{Firing condition}
+
+Solving $s>\ln c^*_{rl}$ for the distance,
+\begin{equation}
+  s>\ln c^*_{rl}
+  \iff
+  \|l-u_r\|^2<-\lambda^2\ln\Big(1-\frac{s-\Ebase}{\Emax}\Big).
+\end{equation}
+Expanding $\|l-u_r\|^2=\|l\|^2+V_r^2-2V_r\,\uhat_r\cdot l$,
+\begin{equation}
+  a_r=\one\left[\uhat_r\cdot l>
+  \frac{\|l\|^2+\lambda^2\ln\Big(1-\dfrac{s-\Ebase}{\Emax}\Big)+V_r^2}{2V_r}\right].
+  \label{eq:fire}
+\end{equation}
+
+\paragraph{Symmetric array.} For $R\le D$ we take the receptors on a regular simplex:
+equal norms $V_r=V$ and equal cosines $\uhat_r\cdot\uhat_{r'}=\kappa$. The threshold is
+then the same for every receptor,
+\begin{equation}
+  \tau=\frac{\|l\|^2+\lambda^2\ln\Big(1-\dfrac{s-\Ebase}{\Emax}\Big)+V^2}{2V},
+  \qquad
+  a_r=\one\big[\uhat_r\cdot l>\tau\big].
+  \label{eq:tau}
+\end{equation}
+$\tau$ does not depend on $r$. It changes from sniff to sniff, through $\|l\|^2$ and $s$.
+
+%=====================================================================
+\section{Fixing a sniff}
+
+\paragraph{Law of the projections.} $\uhat_r\cdot l=\sum_i\hat u_r^i\,l_i$ is a sum of
+independent Gaussians, so it is Gaussian with mean $0$, and
+\begin{equation}
+  \Cov(\uhat_r\cdot l,\uhat_{r'}\cdot l)
+  =\sum_{i,j}\hat u_r^i\hat u_{r'}^j\Cov(l_i,l_j)
+  =\sigma^2\sum_i\hat u_r^i\hat u_{r'}^i
+  =\sigma^2\kappa ,
+  \qquad
+  \Var(\uhat_r\cdot l)=\sigma^2 .
+\end{equation}
+All covariances being equal, the projections can be written
+\begin{equation}
+  \uhat_r\cdot l=\sigma\big(\sqrt\kappa\,z+\sqrt{1-\kappa}\,\varepsilon_r\big),
+  \label{eq:decomp}
+\end{equation}
+with $z$ and the $\varepsilon_r$ independent standard normals. This reproduces the variance
+$\sigma^2$ and the covariance $\sigma^2\kappa$.
+
+We neglect the dependence between $\tau$ and the projections. It comes from $\|l\|^2$,
+which contains the squared projections, and carries a fraction $1/D$ of the variance of
+$\|l\|^2$.
+
+\paragraph{Conditional independence.} By \eqref{eq:tau} and \eqref{eq:decomp},
+\begin{equation}
+  a_r=\one\Big[\varepsilon_r>\big(\tau/\sigma-z\sqrt\kappa\big)/\sqrt{1-\kappa}\Big].
+\end{equation}
+Given $(\tau,z)$, each $a_r$ depends only on its own $\varepsilon_r$, so the receptors are
+independent, each active with probability
+\begin{equation}
+  q=\PP(a_r=1\mid\tau,z)=\Phi\Big[-\big(\tau/\sigma-z\sqrt\kappa\big)/\sqrt{1-\kappa}\Big].
+\end{equation}
+A pattern $A$ with $k$ active receptors has probability $q^k(1-q)^{R-k}$ given $(\tau,z)$.
+It depends on $A$ only through $k$, because the receptors are interchangeable. Averaging
+over $\tau$ and $z$,
+\begin{equation}
+  \PP(A)=\Pi_k=\int dz\,p(z)\int d\tau\,p(\tau)\;q^k(1-q)^{R-k},
+  \qquad
+  \PP(K=k)=\binom Rk\Pi_k ,
+  \label{eq:Pi_exact}
+\end{equation}
+with $\Pi_k$ the probability of one given pattern with $k$ active receptors and $K$ the
+number of active receptors.
+
+%=====================================================================
+\section{Gaussian approximation}
+
+$p(\tau)$ is not Gaussian. We assume it is anyway. Write
+\begin{equation}
+  y=\tau/\sigma-z\sqrt\kappa,
+  \qquad
+  q=\Phi\big(-y/\sqrt{1-\kappa}\big).
+\end{equation}
+$y$ is a sum of independent Gaussian variables, so it is Gaussian. It remains to compute its
+mean and variance, which requires the mean and variance of $\tau$.
+
+\paragraph{Mean of $\tau$.} From \eqref{eq:tau}, with $\EE\|l\|^2=\sum_i\EE[l_i^2]=D\sigma^2$,
+\begin{equation}
+  \EE[\tau]=\frac{D\sigma^2}{2V}
+  +\frac{\lambda^2}{2V}\,\EE\Big[\ln\Big(1-\frac{s-\Ebase}{\Emax}\Big)\Big]
+  +\frac V2 .
+\end{equation}
+At the optimum each receptor is active half of the time,
+$\PP(a_r=1)=\PP(\uhat_r\cdot l>\tau)=1/2$. So $\uhat_r\cdot l-\tau$ has median $0$. For a
+Gaussian the median equals the mean, so $\EE[\tau]=\EE[\uhat_r\cdot l]=0$:
+\begin{equation}
+  \boxed{\;\lambda^2\,\EE\Big[\ln\Big(1-\frac{s-\Ebase}{\Emax}\Big)\Big]=-D\sigma^2-V^2.\;}
+  \label{eq:balance}
+\end{equation}
+This implicit equation fixes the optimal $\Ebase$. Linearizing the logarithm around $s=m$
+(small $\sigma_c$),
+\begin{equation}
+  \Ebase=m-\Emax\Big(1-e^{-(D\sigma^2+V^2)/\lambda^2}\Big).
+  \label{eq:Ebase}
+\end{equation}
+Inserted in the kernel \eqref{eq:model},
+$\ln c^*_{rl}=m+\Emax\big(e^{-(D\sigma^2+V^2)/\lambda^2}-e^{-\|l-u_r\|^2/\lambda^2}\big)$.
+For a ligand at the typical distance $\|l-u_r\|^2\simeq D\sigma^2+V^2$, this gives
+$\ln c^*=m$: the receptor is tuned to the mean concentration.
+
+\paragraph{Variance of $\tau$.} $\|l\|^2$ and $s$ are independent, so
+\begin{equation}
+  \Var(\tau)=\frac{\Var(\|l\|^2)
+  +\Var\Big[\lambda^2\ln\Big(1-\dfrac{s-\Ebase}{\Emax}\Big)\Big]}{4V^2}.
+\end{equation}
+\begin{itemize}
+\item $\Var(\|l\|^2)=\sum_i\Var(l_i^2)$, with
+  $\Var(l_i^2)=\EE[l_i^4]-\EE[l_i^2]^2=3\sigma^4-\sigma^4=2\sigma^4$.
+  So $\Var(\|l\|^2)=2D\sigma^4$.
+\item Linearizing the logarithm around $s=m$,
+  \begin{equation*}
+    \ln\Big(1-\frac{s-\Ebase}{\Emax}\Big)
+    \simeq\ln\Big(1-\frac{m-\Ebase}{\Emax}\Big)-\frac{s-m}{\Ebase+\Emax-m},
+  \end{equation*}
+  so $\Var\big[\lambda^2\ln(\cdots)\big]=\lambda^4\sigma_c^2/(\Ebase+\Emax-m)^2$.
+\end{itemize}
+Finally,
+\begin{equation}
+  \boxed{\;\EE[\tau]=0,
+  \qquad
+  \Var(\tau)=\frac{2D\sigma^4+\dfrac{\lambda^4\sigma_c^2}{(\Ebase+\Emax-m)^2}}{4V^2}.\;}
+  \label{eq:vartau}
+\end{equation}
+
+\paragraph{Mean and variance of $y$.} $\tau$ and $z$ are independent, so
+\begin{equation}
+  \EE[y]=\frac{\EE[\tau]}{\sigma}-\EE[z]\sqrt\kappa=0,
+  \qquad
+  \Var(y)=\frac{\Var(\tau)}{\sigma^2}+\kappa .
+\end{equation}
+The double integral \eqref{eq:Pi_exact} becomes a single one over $y$:
+\begin{equation}
+  \boxed{\;\Pi_k=\int dy\,\varphi_{\Var(y)}(y)\,q^k(1-q)^{R-k},
+  \qquad
+  q=\Phi\Big(\frac{-y}{\sqrt{1-\kappa}}\Big),
+  \qquad
+  \PP(K=k)=\binom Rk\Pi_k ,\;}
+\end{equation}
+with $\varphi_{\Var(y)}(y)=e^{-y^2/2\Var(y)}/\sqrt{2\pi\Var(y)}$ the centred Gaussian
+density of variance $\Var(y)$.
+
+\paragraph{Remark on $\kappa<0$.} Eq.~\eqref{eq:decomp} needs $\kappa\ge0$, while the optimum
+below has $\kappa<0$. The result still holds whenever $\Var(y)\ge0$. With $\tau$ Gaussian,
+the variables $x_r=(\uhat_r\cdot l-\tau)/\sigma$ are jointly Gaussian with variance
+$\Var(\tau)/\sigma^2+1$ and covariance $\Var(\tau)/\sigma^2+\kappa=\Var(y)$. They can be
+written $x_r=-\sqrt{\Var(y)}\,\zeta+\sqrt{1-\kappa}\,\varepsilon_r$, which gives the same
+$q$. Here the Gaussian $\tau$ absorbs the negative cosine.
+
+%=====================================================================
+\section{Standard form}
+
+Rescale to a standard normal, $\zeta=y/\sqrt{\Var(y)}$:
+\begin{equation}
+  \boxed{\;\Pi_k=\int d\zeta\,\varphi(\zeta)\,q^k(1-q)^{R-k},
+  \qquad
+  q=\Phi\Big(-\zeta\sqrt{\tfrac{\Var(y)}{1-\kappa}}\Big)=\Phi(-\nueff\,\zeta),\;}
+  \label{eq:Pi}
+\end{equation}
+\begin{equation}
+  \nueff^2=\frac{\nu^2+\kappa}{1-\kappa},
+  \qquad
+  \nu^2=\frac{\Var(\tau)}{\sigma^2}
+  =\frac{2D\sigma^2+\dfrac{\lambda^4(\sigma_c/\sigma)^2}{(\Ebase+\Emax-m)^2}}{4V^2}.
+  \label{eq:nueff}
+\end{equation}
+$\nueff$ is the only parameter of the integral. Since $\Phi(0)=1/2$, at $\nueff=0$ every
+receptor is active with probability $1/2$ in every sniff, independently of the others.
+
+%=====================================================================
+\section{Optimization}
+
+With $\Ebase$ fixed by \eqref{eq:Ebase} and $\Emax$ held fixed, two parameters remain:
+$\kappa$ and $V$.
+
+\paragraph{Ideal case.} $\nueff=0\iff\kappa=-\nu^2$.
+
+\paragraph{The cosine cannot be arbitrarily negative.}
+\begin{equation}
+  \Big\|\sum_r\uhat_r\Big\|^2=\sum_r\|\uhat_r\|^2+\sum_{r\neq r'}\uhat_r\cdot\uhat_{r'}
+  =R+R(R-1)\kappa\ \ge0
+  \quad\Longrightarrow\quad
+  \boxed{\;\kappa\ge-\frac1{R-1}.\;}
+\end{equation}
+Equality holds when $\sum_r\uhat_r=0$. A common cosine for every pair exists for $R\le D$,
+and for $R=D+1$ only at $\kappa=-1/(R-1)$.
+
+So the ideal case is reachable only if $\nu^2\le1/(R-1)$. Otherwise
+$\kappa=-1/(R-1)$ and
+\begin{equation}
+  \nueff^2=\max\Big(0,\ \frac{\nu^2(R-1)-1}{R}\Big).
+  \label{eq:clip}
+\end{equation}
+In both cases $\nueff$ grows with $\nu$, so $V$ minimizes $\nu$.
+
+\paragraph{Minimizing $\nu$ over $V$.} Replacing $\Ebase$ with \eqref{eq:Ebase},
+$\Ebase+\Emax-m=\Emax e^{-(D\sigma^2+V^2)/\lambda^2}$ and
+\begin{equation}
+  \boxed{\;\nu^2=\frac{2D\sigma^4+\dfrac{\lambda^4\sigma_c^2}{\Emax^2}
+  \,e^{2(D\sigma^2+V^2)/\lambda^2}}{4\sigma^2V^2}.\;}
+\end{equation}
+The first term decreases with $V$, the second grows exponentially. Setting
+$\partial\nu^2/\partial V^2=0$,
+\begin{equation}
+  \frac{\lambda^4\sigma_c^2}{\Emax^2}\,e^{2(D\sigma^2+V^2)/\lambda^2}
+  \Big(\frac{2V^2}{\lambda^2}-1\Big)=2D\sigma^4 .
+\end{equation}
+With
+\begin{equation}
+  \rho=\frac{\sigma\sqrt D}{\lambda},
+  \qquad
+  \Gamma=\frac{\Emax}{\sigma_c},
+\end{equation}
+this reads
+\begin{equation}
+  \Big(\frac{2V^2}{\lambda^2}-1\Big)e^{2V^2/\lambda^2-1}
+  =\frac{2\rho^4\Gamma^2}{D}\,e^{-2\rho^2-1},
+\end{equation}
+whose solution uses the Lambert function $W$, the inverse of $x\mapsto xe^x$:
+\begin{equation}
+  \boxed{\;V_*^2=\frac{\lambda^2}{2}\left[1+W\Big(\frac{2\rho^4\Gamma^2}{D}e^{-2\rho^2-1}\Big)\right],
+  \qquad
+  \nu_{\min}^2=\frac{\rho^2}{W\Big(\dfrac{2\rho^4\Gamma^2}{D}e^{-2\rho^2-1}\Big)}.\;}
+\end{equation}
+$\nueff$ follows from \eqref{eq:clip} at $\nu=\nu_{\min}$.
+
+%=====================================================================
+\section{Mutual information}
+
+\begin{equation}
+  \mathrm{MI}=H(A)=-\sum_A\PP(A)\log_2\PP(A).
+\end{equation}
+Group the patterns by number of active receptors: $\binom Rk$ patterns share the
+probability $\Pi_k$. So
+\begin{equation}
+  \boxed{\;\mathrm{MI}=-\sum_{k=0}^{R}\binom Rk\,\Pi_k\log_2\Pi_k ,\;}
+\end{equation}
+with $\Pi_k$ from \eqref{eq:Pi}. The $R+1$ integrals $\Pi_k$ are computed numerically, for
+example by Gauss--Hermite quadrature. Check: $\sum_k\binom Rk\Pi_k=1$.
+
+\end{document}

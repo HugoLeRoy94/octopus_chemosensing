@@ -123,6 +123,39 @@ Two kernel choices (§03):
 - **gaussian** (default): `E_o = E_base + softplus(max_raw) * (1 − exp(−d²/λ²))`
   — saturates at large distance; biophysically correct.
 - **quadratic** (legacy): `E_o = E_base + softplus(slope_raw) * d²`
+
+**`shared_unit_energies` (classic model only).** When `RunConfig.shared_unit_energies`
+is True the environment registers `base_energy_u_shared` and
+`max_energy_u_raw_shared` of shape `(1,)` INSTEAD of the `(U,)` tensors above, so the
+whole array optimises ONE baseline and ONE selectivity ceiling rather than `n_genes` of
+each. Positions stay per gene. All readers go through the accessors
+`env.base_energies()` / `env.max_energies_raw()` / `env.energy_slopes_raw()`, which
+return `(U,)` in both modes, so `physics.py` can keep indexing them by gene. `expand()`
+is a view, so autograd accumulates the SUM of the per-gene gradients into the scalar,
+which is exactly the gradient of a genuinely shared parameter and not an average.
+
+The flag exists because `analytics/homomer_array_mi.tex` assumes shared energies
+(its assumption A6): with per-gene energies the simulator optimises a strictly larger
+family and the closed form only describes the special case where the optimiser happens
+to make them equal. Set it True for any run meant to be compared against that document;
+leave it False for the physics runs. Not available with `use_interface_model`, which
+would need a second convention for the +/- faces, and the constructor raises if both
+are set. Checkpoints keep the old parameter names in the default mode, so existing runs
+load unchanged.
+
+**`fixed_max_energy` (classic model, gaussian kernel only).** When
+`RunConfig.fixed_max_energy` is a number (natural-log units), `E_max` is that value for
+every gene and is not optimised. The environment registers the inverse-softplus of the
+value as the BUFFER `max_energy_u_raw_fixed` of shape `(1,)`, instead of any
+`max_energy_u_raw*` parameter, so it is saved with the checkpoint but is not in
+`env.parameters()`. `env.max_energies_raw()` returns it expanded to `(U,)`, so no reader
+changes. It combines with either value of `shared_unit_energies`, which then only
+concerns `E_base`. `clone_with_extra_units` keeps the value. The constructor raises for
+the quadratic kernel and for `use_interface_model`. Default `None` keeps `E_max`
+learnable. The reason: with a learnable `E_max` the closed form of
+`analytics/homomer_array_mi.tex` has no finite optimum (raising `E_max` with the receptor
+norm lowers the common mode without limit), and the learned value was set by the
+training dynamics.
   — grows without bound; kept for backward compatibility.
 
 ---
@@ -138,14 +171,28 @@ three private helpers so each concern is testable in isolation:
 | `_sample_noisy_ligands(B, sparse_idx)` | `(B, S_batch, D)` | noisy coords for present ligands only; dummy slots zeroed |
 | `_compute_energies(v_ligands, receptor_indices)` | `(B,S_batch,U)` or `(B,S_batch,R,k)` | distance trick + kernel; composition binding uses the source axis instead |
 
-`s_upper` is the usual allocation width computed once in `__init__`:
-`s_upper = min(L, (⌊μ_src + 4√μ_src⌋ + 1) × max_m)`. This Poisson-tail heuristic
-is not a support bound. Each batch uses `S_batch = max(s_upper, max_b S_b)` so rare
-large mixtures are retained in full and the physics agrees with the returned masks.
-When `s_upper < L`, finding this width requires one scalar GPU→CPU synchronization;
-when `s_upper == L`, no extra synchronization is needed. The width never exceeds L.
-For the default config (mu_sources=4, max_m=10): s_upper = 130 vs L = 2000, a **15× reduction**
-in the dominant einsum and its backward.  Padding slots carry global index L with concentration 0,
+`s_upper` is the allocation width and is a **high-water mark**, not a support bound and
+not a distributional estimate. It is initialised to `1` and `_sample_masks` raises it to
+`max_b S_b` whenever a batch overflows it, never lowering it again. Each batch therefore
+uses `S_batch = max(s_upper, max_b S_b)`: rare large mixtures are retained in full, the
+physics agrees with the returned masks, and after a few batches the width has converged to
+the tightest value that never truncates. Monotone growth keeps the output shape stable, so
+the caching allocator sees one block size rather than a per-batch oscillation.
+
+This replaced `s_upper = min(L, (⌊μ_src + 4√μ_src⌋ + 1) × max_m)`, which mixed a *quantile*
+of the source count with the *worst case* of the ligands-per-source count and so collapsed
+to the full pool whenever `K` was not much larger than that quantile. With
+`n_presence_blocks=1` it allocated `L` slots per sniff regardless of `mu_ligands_per_source`:
+a 50k-ligand pool carrying one ligand per sniff allocated 50k slots, and
+`(B, s_upper, D)` at `B=16384, D=8` is 24 GiB. The high-water mark gives `s_upper = 1` for
+that configuration. It also survives the nonuniform-weight HOOKs in `_sample_masks`, which
+no closed-form heuristic would.
+
+When `s_upper < L`, finding this width requires one scalar GPU→CPU synchronization per
+batch; when `s_upper == L`, no extra synchronization is needed. The width never exceeds L.
+Note that the ligand-axis width is now data-dependent, so the number of variates drawn by
+`_sample_noisy_ligands` is too: runs are not reproducible across different `s_upper`
+histories even under a fixed seed.  Padding slots carry global index L with concentration 0,
 contributing exp(−27) ≈ 0 to the logsumexp in physics — numerically invisible.
 
 ### 2.1 Presence sampling — hierarchical source→ligand model
@@ -1191,8 +1238,11 @@ time based on array size R and entropy estimator:
     `(B, n_ligands, U)` with `U = n_genes` (no `k_sub` axis), so charging `R·k_sub` over-
     estimates by `k_sub` — a hidden ~5× cushion that vanishes once `use_interface_model=True`.
   - Note `s_upper ≤ n_ligands`, so `n_ligands` is a conservative bound on the present-ligand
-    axis of the energy tensor. When the presence sampler is dense (e.g. `n_presence_blocks=1`,
-    large `mu_ligands_per_source`) `s_upper` saturates to `n_ligands` and the bound is tight.
+    axis of the energy tensor. It is tight only when the sampler actually realizes mixtures of
+    that size (large `mu_ligands_per_source`); since `s_upper` is now a high-water mark it no
+    longer saturates merely because `n_presence_blocks=1`. The auto batch sizer deliberately
+    charges `n_ligands` rather than `s_upper`, so a small `s_upper` can never inflate the
+    chosen batch into a later OOM.
 - **Measurement batches** (when `test_batch_size="auto"`): two sizes are returned.
   `test_perepoch = 4 · batch_size` drives the per-epoch convergence curve (cheap, so KT's
   O(B²) does not dominate every logged epoch); `test_final = min(2^R, memory)` is used once for
