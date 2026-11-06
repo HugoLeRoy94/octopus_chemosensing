@@ -158,6 +158,13 @@ norm lowers the common mode without limit), and the learned value was set by the
 training dynamics.
   — grows without bound; kept for backward compatibility.
 
+**`family_weights`.** A tuple with one probability per family. Each pool ligand is
+assigned to family `f` with probability `family_weights[f]` (`torch.multinomial`), instead
+of uniformly (`torch.randint`, the default `None`). With one ligand per sniff drawn
+uniformly from the pool, this sets the probability that a sniff comes from each family.
+The assignment is a buffer, so checkpoints load unchanged. `clone_with_extra_units` keeps
+the value. The constructor raises if the length differs from `n_families`.
+
 ---
 
 ## Stage 2 — Batch Sampling (`environment.py::LigandEnvironment.sample_batch`)

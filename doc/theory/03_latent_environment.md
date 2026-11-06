@@ -56,7 +56,7 @@ Instead of generating completely random new chemicals at every step, the environ
 
 #### 3.2.1 Fixed Initialization (The Ligand Pool)
 During the environment setup, $N_{\text{ligands}}$ specific ligands are instantiated. For each ligand $\ell$, the following parameters are drawn once and permanently fixed:
-* **Family Assignment:** The ligand is assigned to a broad family $f$.
+* **Family Assignment:** The ligand is assigned to a broad family $f$, uniformly at random by default, or with probabilities `RunConfig.family_weights` (one entry per family) when set.
 * **Base Coordinate ($v_\ell$):** Drawn from the family's spatial distribution: $v_\ell \sim \mathcal{N}(v_f, \sigma_{\text{shape}})$.
 * **Concentration Parameters:** A unique mean and variance ($\mu_{c,\ell}, \sigma_{c,\ell}$) governing its specific concentration distribution.
 * **Source Assignment:** Each ligand belongs to one fixed presence block, assigned independently of its chemical family. Presence is sampled hierarchically as described below, rather than by independent per-ligand Bernoulli draws.
